@@ -1,0 +1,14 @@
+# Replit — Go ツールチェーンを nix で用意し、Go エッジ + Node で起動
+run = "bash scripts/start.sh"
+entrypoint = "index.js"
+
+[nix]
+channel = "stable-24_05"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
+
+[deployment]
+run = ["bash", "scripts/start.sh"]
+deploymentTarget = "gce"

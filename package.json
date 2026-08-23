@@ -11,8 +11,12 @@
   },
   "scripts": {
     "start": "node index.js",
+    "start:edge": "node scripts/launch.mjs",
     "dev": "node index.js",
+    "build:edge": "cd goedge && go build -trimpath -ldflags \"-s -w\" -o bin/persimmon-edge .",
     "test:api": "node scripts/smoke.js",
+    "test:edge": "node scripts/smoke-edge.js",
+    "test:all": "node scripts/smoke.js && node scripts/smoke-edge.js",
     "test:fault": "node scripts/fault-inject.js",
     "test:issue": "node scripts/test-issue-direct.js"
   },

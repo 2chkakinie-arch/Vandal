@@ -1,0 +1,23 @@
+{
+  "$schema": "https://codesandbox.io/schemas/tasks.json",
+  "setupTasks": [
+    {
+      "name": "Install Dependencies",
+      "command": "npm install"
+    }
+  ],
+  "tasks": {
+    "start": {
+      "name": "Start Persimmon (Go edge + Node)",
+      "command": "bash scripts/start.sh",
+      "runAtStart": true,
+      "preview": {
+        "port": 3000
+      }
+    },
+    "test": {
+      "name": "Smoke tests (api + edge)",
+      "command": "npm run test:all"
+    }
+  }
+}

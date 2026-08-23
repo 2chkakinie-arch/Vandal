@@ -1,12 +1,12 @@
 version: 1
+# Render — Docker ランタイムで「Go エッジ + Node」構成をデプロイ。
+# （従来の env: node を使いたい場合は buildCommand: npm install /
+#   startCommand: npm start のままでも完全に動作します。詳しくは README。）
 services:
   - type: web
     name: persimmon
-    env: node
+    env: docker
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /__edge/healthz
     autoDeploy: true
-    envVars:
-      - key: NODE_VERSION
-        value: 22
