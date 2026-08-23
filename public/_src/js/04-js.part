@@ -23,10 +23,22 @@ class DashLite {
     this.retry403 = 0;
     this._onTime = () => this.pump().catch(() => {});
     this._onSeek = () => this._handleSeek().catch(() => {});
+    // 高速化（MSE / ダイレクトでない動画）: セグメント先読みウィンドウ。
+    // 再生位置より先のセグメントを並列フェッチしておくことで、音楽系の
+    // 長時間動画でもネットワーク RTT が MSE append の待ちにならず、
+    // セグメント到着→即 append が可能になる。メモリは最大数セグメント分
+    // （通常 2〜5 MB 程度）に抑え、シーク/破棄時は全キャッシュを消す。
+    this._pfV = new Map();
+    this._pfA = new Map();
+    this._pfDepth = 2;
   }
 
-  async _range(itag, start, end) {
-    let res = await fetch(`/api/stream?v=${this.videoId}&itag=${itag}`, { headers: { Range: `bytes=${start}-${end}` } });
+  _streamUrl(itag) {
+    return `/api/stream?v=${this.videoId}&itag=${itag}`;
+  }
+
+  async _fetchRange(itag, start, end) {
+    let res = await fetch(this._streamUrl(itag), { headers: { Range: `bytes=${start}-${end}` } });
     if (res.status === 403 && this.retry403 < 2) {
       // upstream URL died (IP mismatch / expiry): make the server rebuild it once
       this.retry403++;
@@ -35,6 +47,34 @@ class DashLite {
     }
     if (!res.ok && res.status !== 206) throw new Error('range ' + res.status);
     return res.arrayBuffer();
+  }
+
+  async _range(itag, start, end) {
+    return this._fetchRange(itag, start, end);
+  }
+
+  // セグメント（v/a 別）の先読み。同じセグメントへの重複要求は 1 本に束ねる。
+  _prefetch(which, idx, seg) {
+    if (!seg || this.dead) return;
+    const cache = which === 'v' ? this._pfV : this._pfA;
+    if (cache.has(idx)) return;
+    const itag = which === 'v' ? this.vTrack.itag : this.aTrack.itag;
+    const job = this._fetchRange(itag, seg.start, seg.end)
+      .catch((e) => { cache.delete(idx); throw e; });
+    cache.set(idx, job);
+    // 暴走しないようウィンドウ外は捨てる
+    const base = which === 'v' ? this.posV : this.posA;
+    for (const k of cache.keys()) {
+      if (k < base - 2 || k > base + this._pfDepth + 1) cache.delete(k);
+    }
+  }
+
+  async _seg(which, idx, seg) {
+    const cache = which === 'v' ? this._pfV : this._pfA;
+    const job = cache.get(idx);
+    if (job) { cache.delete(idx); return job; }
+    const itag = which === 'v' ? this.vTrack.itag : this.aTrack.itag;
+    return this._fetchRange(itag, seg.start, seg.end);
   }
 
   _parseSidx(buf, indexEnd) {
@@ -96,6 +136,12 @@ class DashLite {
     this.posV = this._segIndex(this.vSegs, startTime);
     this.posA = this._segIndex(this.aSegs, startTime);
     this.startAt = startTime;
+    // 高速化: MSE sourceopen 待ちの間に、これから使う最初のセグメントを
+    // 並列で投げておく（init と index は取得済み）。sourceopen 後の append が
+    // ネットワーク RTT を待たずに進むため、音楽系の長い動画で初音が早くなる。
+    const sv0 = this.vSegs[this.posV], sa0 = this.aSegs[this.posA];
+    if (sv0) this._prefetch('v', this.posV, sv0);
+    if (sa0) this._prefetch('a', this.posA, sa0);
     this.pending = [{ buf: this.abuf, data: aInit }, { buf: this.vbuf, data: vInit }];
     await this._flush();
     this.video.addEventListener('timeupdate', this._onTime);
@@ -149,18 +195,27 @@ class DashLite {
         const endV = this._bufferedEnd('v'), endA = this._bufferedEnd('a');
         if (endV - t > 24 && endA - t > 24) return;
         if (this.posV >= this.vSegs.length && this.posA >= this.aSegs.length) return;
+        // 高速化: これから使うセグメントを先回りして並列フェッチ。
+        // MSE は 1 本ずつ append するが、ネットワーク往復は並べておくことで
+        // 待ち時間を隠蔽する（ダイレクトでない音楽系の長い動画で特に効く）。
+        for (let i = 0; i < this._pfDepth; i++) {
+          if (this.posV + i < this.vSegs.length) this._prefetch('v', this.posV + i, this.vSegs[this.posV + i]);
+          if (this.posA + i < this.aSegs.length) this._prefetch('a', this.posA + i, this.aSegs[this.posA + i]);
+        }
         // fetch whichever buffer is shorter
         const pickVideo = this.posV < this.vSegs.length && (this.posA >= this.aSegs.length || endV <= endA + 0.5);
         if (pickVideo) {
           if (this.posV >= this.vSegs.length) return;
-          const seg = this.vSegs[this.posV++];
-          const data = await this._range(this.vTrack.itag, seg.start, seg.end);
+          const idx = this.posV++;
+          const seg = this.vSegs[idx];
+          const data = await this._seg('v', idx, seg);
           if (this.dead) return;
           await this._append(this.vbuf, data);
         } else {
           if (this.posA >= this.aSegs.length) return;
-          const seg = this.aSegs[this.posA++];
-          const data = await this._range(this.aTrack.itag, seg.start, seg.end);
+          const idx = this.posA++;
+          const seg = this.aSegs[idx];
+          const data = await this._seg('a', idx, seg);
           if (this.dead) return;
           await this._append(this.abuf, data);
         }
@@ -170,13 +225,19 @@ class DashLite {
     }
   }
 
+  _dropPrefetch() {
+    this._pfV.clear();
+    this._pfA.clear();
+  }
+
   async _handleSeek() {
     if (this.dead || !this.vbuf) return;
     const t = this.video.currentTime;
     const inV = t >= 0 && t < this._bufferedEnd('v');
     const inA = t >= 0 && t < this._bufferedEnd('a');
     if (inV && inA) { this.pump().catch(() => {}); return; }
-    // re-sync both pipelines at t
+    // re-sync both pipelines at t — 古い位置の先読みは破棄して再開
+    this._dropPrefetch();
     try {
       await this._clear(this.vbuf); await this._clear(this.abuf);
       this.posV = this._segIndex(this.vSegs, t);
@@ -198,6 +259,7 @@ class DashLite {
   destroy() {
     this.dead = true;
     this.pumpRunning = false;
+    this._dropPrefetch();
     this.video.removeEventListener('timeupdate', this._onTime);
     this.video.removeEventListener('seeking', this._onSeek);
     try { if (this.mse.readyState === 'open') this.mse.endOfStream(); } catch (_) {}

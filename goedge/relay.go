@@ -217,7 +217,7 @@ func (s *pinStore) warm(v, itag, rawURL, proxy string) {
 	req.Header.Set("User-Agent", "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip")
 	req.Header.Set("Range", "bytes=0-"+strconv.Itoa(hotWarmBytes-1))
 	req.Header.Set("Accept", "*/*")
-	res, err := s.pool.do(req, proxy)
+	res, err := s.pool.doRelay(req, proxy)
 	if err != nil {
 		return
 	}
@@ -401,7 +401,7 @@ func tryServePinnedStream(w http.ResponseWriter, r *http.Request, pins *pinStore
 	if rng := r.Header.Get("Range"); rng != "" {
 		req.Header.Set("Range", rng)
 	}
-	res, err := pins.pool.do(req, ent.proxyURL)
+	res, err := pins.pool.doRelay(req, ent.proxyURL)
 	if err != nil {
 		return false
 	}
@@ -439,6 +439,16 @@ func tryServePinnedStream(w http.ResponseWriter, r *http.Request, pins *pinStore
 	if r.Method == http.MethodHead {
 		return true
 	}
-	_, _ = io.Copy(w, res.Body)
+	// 256 KiB copy buffer reduces Go-scheduler overhead and syscall churn
+	// on long video relays versus the 32 KiB io.Copy default. It is a pure
+	// byte pump: no buffering of a whole response, no caching, identical
+	// bytes reach the browser (just with lower per-byte overhead).
+	buf := relayBufPool.Get().(*[]byte)
+	_, _ = io.CopyBuffer(w, res.Body, *buf)
+	relayBufPool.Put(buf)
 	return true
 }
+
+// relayBufPool reuses 256 KiB scratch buffers across pinned-stream relays so
+// we don't allocate a fresh buffer per video request.
+var relayBufPool = sync.Pool{New: func() interface{} { b := make([]byte, 256*1024); return &b }}

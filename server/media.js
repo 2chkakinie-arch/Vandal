@@ -108,7 +108,7 @@ class HotChunks {
       const t = setTimeout(() => ac.abort(), 15000);
       const spanDone = logbus.span('stream', 'ホットキャッシュ先読み', { v, itag, kb: Math.round(warmBytes() / 1024), via: proxyUrl ? 'proxy' : 'direct' });
       try {
-        const dispatcher = proxyUrl ? proxyManager.dispatcherFor(proxyUrl) : undefined;
+        const dispatcher = proxyManager.dispatcherForRelay(proxyUrl);
         const up = await undiciRequest(url, {
           method: 'GET',
           headers: {
