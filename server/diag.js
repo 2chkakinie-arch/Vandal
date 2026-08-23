@@ -20,6 +20,7 @@ const { engineConfig } = require('./config');
 const { proxyManager } = require('./proxies');
 const { hotChunks } = require('./media');
 const it = require('./innertube');
+const { gocore } = require('./gocore');
 
 const router = express.Router();
 router.use(express.json({ limit: '64kb' }));
@@ -99,6 +100,7 @@ router.get('/api/diag/state', (req, res) => {
       heapUsed: Math.round(process.memoryUsage().heapUsed / 1048576),
     },
     node: process.version,
+    core: gocore.status(),
   });
 });
 

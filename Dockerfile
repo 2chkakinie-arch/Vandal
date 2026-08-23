@@ -40,7 +40,8 @@ USER node
 
 EXPOSE 3000
 ENV PORT=3000 \
-    INTERNAL_PORT=3101
+    INTERNAL_PORT=3101 \
+    CORE_PORT=3102
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/__edge/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

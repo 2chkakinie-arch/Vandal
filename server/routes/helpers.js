@@ -7,11 +7,14 @@ const { hotChunks } = require('../media');
 const { logbus } = require('../logbus');
 const { engineConfig } = require('../config');
 const it = require('../innertube');
+const { gocore } = require('../gocore');
 
 /** fetch the pinned itag-18 URL and pre-buffer its first bytes in RAM. */
 async function warmDefault(v) {
   try {
+    // getStreamUrl → streamMapSet → Go にピン（Go 側で 768KB 保温）。
     const { url, proxyUrl } = await it.getStreamUrl(v, 18);
+    if (gocore.available()) return; // Node の二重 fetch を避ける（帯域も初速も損しない）
     if (url) hotChunks.warm(v, 18, url, proxyUrl);
   } catch (_) { /* warm is best-effort */ }
 }

@@ -8,6 +8,8 @@ const { logbus } = require('./logbus');
 const { engineConfig } = require('./config');
 const { YTError } = require('./errors');
 const { caches, CACHE_MIN } = require('./caches');
+const { gocore } = require('./gocore');
+const { throwIfHedgeDefinitive } = require('./hedge');
 
 const API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 const HOST_WEB = 'https://www.youtube.com';
@@ -19,8 +21,16 @@ const HOST_WEB = 'https://www.youtube.com';
  * zernio(getlate) のダウンローダが生 URL を返すのと同じ仕組みであり、
  * 本サーバーは動画ごとに Range 実測してから「直結可能」判定をフロントへ返す。
  */
-async function probePlayable(url, { timeout = 4500, dispatcher } = {}) {
+async function probePlayable(url, { timeout = 4500, dispatcher, proxyUrl } = {}) {
   if (!url) return false;
+  // Prefer the (Go or Node) hedge probe. dispatcher-only callers still work
+  // via the historical fetch path so existing unit hooks stay valid.
+  if (proxyUrl !== undefined || dispatcher === undefined) {
+    try {
+      const r = await gocore.probe([{ id: 'p', url, proxy: proxyUrl || '', timeoutMs: timeout }]);
+      if (r && Array.isArray(r.results)) return !!r.results[0]?.ok;
+    } catch (_) { /* fall through */ }
+  }
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), timeout);
   try {
@@ -158,44 +168,48 @@ async function callApi(endpoint, payload, client = CLIENTS.WEB, { hl = 'ja', gl 
     'Origin': HOST_WEB,
     ...(visitorId ? { 'X-Goog-Visitor-Id': visitorId } : {}),
   };
-  let lastErr = null;
-  let lastJson = null;
   const chain = transport ? [transport] : transports(preferProxy, transportCount);
   const ch = ENDPOINT_LOG_CH[endpoint] || 'meta';
-  for (const t of chain) {
+  const reqs = chain.map((t, i) => ({
+    id: String(i),
+    method: 'POST',
+    url,
+    headers,
+    body,
+    proxy: t.kind === 'proxy' ? t.url : '',
+    timeoutMs: timeout,
+  }));
+  const start = Date.now();
+  const result = await gocore.hedge(reqs, { kind: 'json' });
+  try { throwIfHedgeDefinitive(result); } catch (e) {
+    logbus.warn(ch, `${endpoint} HTTP ${result?.status}`, { ms: Date.now() - start });
+    throw e;
+  }
+  if (result?.ok && result.body) {
+    const idx = Number(result.winner);
+    const t = chain[Number.isFinite(idx) ? idx : 0] || chain[0];
     const via = t.kind === 'proxy' ? `proxy ${t.url}` : 'direct';
-    try {
-      const start = Date.now();
-      const res = await rawFetch(url, { method: 'POST', headers, body, dispatcher: t.dispatcher, timeout });
-      if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        lastJson = tryParse(txt);
-        logbus.warn(ch, `${endpoint} HTTP ${res.status}`, { via, ms: Date.now() - start });
-        // 5xx or weird -> rotate transport. 4xx -> definitive API error.
-        if (res.status >= 500 || res.status === 429) {
-          if (t.kind === 'proxy') proxyManager.markBad(t.url);
-          lastErr = new YTError(`YouTube HTTP ${res.status}`, 502, 'HTTP_' + res.status);
-          continue;
-        }
-        const msg = lastJson?.error?.message || `YouTube HTTP ${res.status}`;
-        throw new YTError(msg, res.status === 400 ? 400 : 502, lastJson?.error?.status || 'HTTP_' + res.status);
-      }
-      const json = await res.json();
-      if (t.kind === 'proxy') proxyManager.markGood(t.url, Date.now() - start);
-      if (ret) ret.transport = t;
-      logbus.debug(ch, `${endpoint} ✓`, {
-        via, ms: Date.now() - start,
-        client: client.ctx.clientName,
-        playability: json?.playabilityStatus?.status || undefined,
-      });
-      return json;
-    } catch (e) {
-      if (e instanceof YTError && e.status === 400) throw e; // bad payload: no point rotating
-      if (e instanceof YTError && e.code === 'LOGIN_DATA') throw e;
-      lastErr = e;
-      logbus.warn(ch, `${endpoint} 試行失敗 → 経路ローテーション`, { via, err: e?.message });
-      if (t.kind === 'proxy') proxyManager.markBad(t.url);
-    }
+    if (t.kind === 'proxy') proxyManager.markGood(t.url, result.ms || (Date.now() - start));
+    if (ret) ret.transport = t;
+    const json = tryParse(result.body);
+    if (!json) throw new YTError('bad json', 502);
+    logbus.debug(ch, `${endpoint} ✓`, {
+      via, ms: result.ms || (Date.now() - start),
+      client: client.ctx.clientName,
+      playability: json?.playabilityStatus?.status || undefined,
+      core: gocore.available() ? 'go' : 'node',
+    });
+    return json;
+  }
+  // No winner: mark failed proxies (skip canceled / aborted — those are losers of a won race)
+  let lastErr = null;
+  for (const a of result?.attempts || []) {
+    const t = chain[Number(a.id)];
+    if (!t || t.kind !== 'proxy') continue;
+    if (a.err === 'canceled' || a.accept) continue;
+    proxyManager.markBad(t.url);
+    lastErr = lastErr || new YTError(a.err || 'upstream unreachable', 502);
+    logbus.warn(ch, `${endpoint} 試行失敗 → 経路ローテーション`, { via: 'proxy ' + t.url, err: a.err });
   }
   throw lastErr || new YTError('upstream unreachable', 502);
 }

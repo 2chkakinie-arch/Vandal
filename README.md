@@ -6,6 +6,46 @@ Made by Kakinie with llytpr-wl.v01nh TEAM. V1
 
 ---
 
+## V10 — Go を動画情報＆ストリーム取得の基盤に
+
+**静的配信だけでなく、動画メタ／player 発行／ストリーム中継そのものを Go が担う。**
+InnerTube のパース・cipher・プロキシプールは実績ある Node のまま。HTTP の並列取得と
+googlevideo 中継だけを Go に移し、負けた経路は即座にキャンセルする。
+
+```
+internet ─▶ persimmon-edge (Go)           ← $PORT
+               │  静的シェル（メモリ + gzip 事前圧縮）
+               │  /api/stream ピン済み → googlevideo 直中継（Node ホップ 0）
+               └─▶ node index.js          ← 127.0.0.1:$INTERNAL_PORT
+                      │  パース / cipher / プロキシプール
+                      └─▶ Go fetch-core   ← 127.0.0.1:$CORE_PORT（ループバック専用）
+                           並列ヘッジ + Range プローブ + ピン登録
+```
+
+Elixir は「分散のためのもう 1 ランタイム」が増えるだけで、この I/O 経路では
+Go の goroutine ヘッジより遅くなり、Vercel / Cloudflare / 単一 Docker への
+展開も壊すので採用していない。速度もデプロイ性も落ちない選択。
+
+### ⚡ V10 で速くなる点
+
+| 領域 | 内容 |
+|---|---|
+| **player 発行** | クライアント×経路を 1 回の hedge で同時発射。最初の `playability=OK` が勝った瞬間に敗者を cancel（旧 firstWin は敗者を最後まで走らせていた） |
+| **watchNext / search / comments** | 旧実装はプロキシを直列ローテ。今は最大 3 経路を同時に撃ち、最初の 2xx JSON で確定 |
+| **直結プローブ** | プログレッシブ＋映像＋音声 × 自 egress/トンネルを **1 ファンアウト** で Range 実測 |
+| **ストリーム中継** | ピン済み `/api/stream?v=&itag=` は `browser → Go → googlevideo`。Node/undici を経由しない |
+| **先頭フレーム** | ピン登録と同時に Go が 768KB を RAM 保温。MSE の先頭 Range はサブミリ秒 |
+| **接続再利用** | youtube.com / googlevideo への HTTP/2 + keep-alive を Go Transport が使い回す |
+| **絶対に遅くならない** | コア未起動・3 連続失敗・`npm start` / Vercel は **同じセマンティクスの Node ヘッジ** に即切替。ヘルスポーリングが通るまで Go には仕事を出さない |
+
+### 🛡️ 安全網（挙動同一性）
+
+1. 応答 JSON の形は V9 と同一（パースは Node、Go はバイトを運ぶだけ）
+2. `/api/stream?raw=`（HLS）とピン無しは従来どおり Node（プロキシプール検証を維持）
+3. googlevideo / youtube / ytimg / piped 以外への取得は Go が拒否（オープンプロキシ化しない）
+4. fetch-core は `127.0.0.1` のみ。公開ポートからは到達できない
+5. `scripts/smoke-core.js` がヘッジ／player 判定／プローブ／health 面を外部ネット無しで検証
+
 ## V9 — Go エッジ基盤 + あらゆるプラットフォームへ展開
 
 **Go レイヤーを配信の基盤に追加して、初期表示をさらに高速化。** Node バックエンド（実績ある InnerTube エンジン）は一切そのまま — Go エッジがその前に立って静的配信を肩代わりします。
@@ -13,6 +53,7 @@ Made by Kakinie with llytpr-wl.v01nh TEAM. V1
 ```
 internet ─▶ persimmon-edge (Go)      ← $PORT（静的シェルをメモリから gzip 事前圧縮で即配信）
                └─▶ node index.js     ← 127.0.0.1:$INTERNAL_PORT（InnerTube / プロキシ / SSE）
+                   └─▶ Go fetch-core ← 127.0.0.1:$CORE_PORT（V10: 動画情報・ストリーム取得）
 ```
 
 ### ⚡ Go 基盤による高速化ポイント
@@ -108,6 +149,7 @@ npm install
 npm start            # 従来どおり Node 単体で起動（PORT env、既定 3000）
 npm run start:edge   # Go エッジ + Node の高速構成で起動（推奨）
 npm run test:api     # ローカルスモークテスト（外部ネット不要）
+npm run test:core    # 並列ヘッジ / プローブ / gocore フォールバック（外部ネット不要）
 npm run test:edge    # Go エッジ統合テスト（パリティ 22 項目）
 ```
 
