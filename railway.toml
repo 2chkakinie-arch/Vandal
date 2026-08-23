@@ -1,0 +1,11 @@
+# Railway — Dockerfile ベースで「Go エッジ + Node」構成をそのままデプロイ。
+# PORT は Railway が自動注入する（launch.mjs がそれを読む）。
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/__edge/healthz"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

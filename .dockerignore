@@ -1,0 +1,7 @@
+.git
+node_modules
+goedge/bin
+data/config.json
+npm-debug.log*
+.DS_Store
+.arena

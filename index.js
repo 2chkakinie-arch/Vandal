@@ -80,8 +80,11 @@ module.exports = app;
 /* istanbul ignore next */
 if (require.main === module) {
   const port = Number(process.env.PORT) || 3000;
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`[llytpr-wl.v01nh] listening on 0.0.0.0:${port}`);
+  // HOST env（既定 '0.0.0.0' = 従来どおり）。Go エッジ配下ではランチャーが
+  // 127.0.0.1 を指定してローカル専用バインドにする（外部へは公開されない）。
+  const host = process.env.HOST || '0.0.0.0';
+  app.listen(port, host, () => {
+    console.log(`[llytpr-wl.v01nh] listening on ${host}:${port}`);
     console.log('[llytpr-wl.v01nh] Made by Kakinie with llytpr-wl.v01nh TEAM. V1');
     // 高速化（初回待ち短縮）: 起動と同時に裏で3つ同時に暖機する —
     //   1. プロキシプール（L1 スキャン → L2/L3 認定へ直行）
