@@ -918,6 +918,19 @@ async function getStreamUrl(videoId, itag, { verify = false } = {}) {
     const p = await player(videoId);
     entry = buildMapEntry(p);
     streamMapSet(videoId, entry);
+    // 高速化（純粋な読み込み速度）: getVideoFullUncached 経路では既に
+    // ensureWorkingPin がバックグラウンド発火済みのため、ここでは重複起動
+    // だけを避ける。直接 /api/stream へ来た場合（ホットリンク等）は
+    // ここで初めてバックグラウンド検証を開始し、初回セグメント要求を
+    // 待たせない（verify=false と同じく発行 egress の URL を即返す）。
+    const e = streamMapGet(videoId) || entry;
+    if (!e.pinnedVerified && !e.pinChecking) {
+      e.pinChecking = true;
+      ensureWorkingPin(videoId).finally(() => {
+        const e2 = streamMapGet(videoId);
+        if (e2) { e2.pinChecking = false; }
+      });
+    }
   }
   // verify=true のときだけ egress 実測＆ピン修復（ホットパス初手は軽量を優先。
   // 実測自体は watch 応答時に並行済みのことが多く、その場合はここでも即時ヒット）

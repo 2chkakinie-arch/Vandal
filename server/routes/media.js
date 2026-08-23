@@ -48,8 +48,10 @@ router.get('/api/stream', wrap(async (req, res) => {
         'Accept': '*/*',
       };
       if (req.headers.range) headers.Range = String(req.headers.range);
-      // stream URLs are IP-bound to whichever egress fetched them: reuse it
-      const dispatcher = proxyUrl ? proxyManager.dispatcherFor(proxyUrl) : undefined;
+      // stream URLs are IP-bound to whichever egress fetched them: reuse it.
+      // 高速化: 直 egress でもリレー専用の keep-alive Agent を使い、
+      // セグメント毎の TCP/TLS ハンドシェイクを排除する。
+      const dispatcher = proxyManager.dispatcherForRelay(proxyUrl);
       if (dedupe) {
         const key = v + '|' + itag + '|' + headers.Range;
         let job = _streamJobs.get(key);

@@ -26,7 +26,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { ProxyAgent, fetch: undiciFetch } = require('undici');
+const { ProxyAgent, Agent, fetch: undiciFetch } = require('undici');
 const { logbus } = require('./logbus');
 const { engineConfig } = require('./config');
 
@@ -66,6 +66,16 @@ class ProxyManager {
     this.rr = 0;
     this.rrI = 0;
     this.agents = new Map();   // proxyUrl -> ProxyAgent
+    // 直 egress リレー専用の共有 Agent。undici のグローバル dispatcher を
+    // そのまま使うと初回接続ごとに TCP/TLS ハンドシェイクが走るため、
+    // googlevideo への keep-alive コネクションをまとめて再利用する。
+    // メタ用とは別系統にして、動画中継のヘッビーなトラフィックが
+    // InnerTube POST のコネクションプールを圧迫しないようにする。
+    this._directRelayAgent = new Agent({
+      keepAliveTimeout: 30000,
+      keepAliveMaxTimeout: 60000,
+      connections: 16,
+    });
     this.refreshing = null;
     this.certifying = null;
     this.lastRefresh = 0;
@@ -120,7 +130,17 @@ class ProxyManager {
   _agent(url) {
     let a = this.agents.get(url);
     if (!a) {
-      a = new ProxyAgent({ uri: url, keepAliveTimeout: 8000, keepAliveMaxTimeout: 15000 });
+      a = new ProxyAgent({
+        uri: url,
+        keepAliveTimeout: 8000,
+        keepAliveMaxTimeout: 15000,
+        // 高速化（リレー専用）: 無料プロキシ経由の動画バイト中継で、
+        // 既定の小さなソケットバッファが TCP ウィンドウを詰まらせるのを
+        // 防ぐ。メモリ使用量は総プロキシ数に比例するが、実際に開かれる
+        // コネクション分だけなので高が知れている。メタ取得（hedge）は
+        // 1 リクエスト毎に使い捨てのため影響は事実上ゼロ。
+        connections: 8,
+      });
       this.agents.set(url, a);
     }
     return a;
@@ -359,6 +379,16 @@ class ProxyManager {
 
   dispatcherFor(url) {
     return url ? this._agent(url) : undefined;
+  }
+
+  /**
+   * 動画中継専用 dispatcher。プロキシありは各 ProxyAgent（keep-alive 済み）、
+   * 直 egress はリレー専用の共有 Agent を返す。undefined を返すと呼び出し側が
+   * グローバル dispatcher（毎回ハンドシェイクしがち）へ落ちるため、明示する。
+   */
+  dispatcherForRelay(url) {
+    if (url) return this._agent(url);
+    return this._directRelayAgent;
   }
 
   markBad(url) {

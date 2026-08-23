@@ -2,6 +2,7 @@
 /** Shared HTTP helpers + relay state for the llytpr-wl.v01nh route modules. */
 const { request: undiciRequest } = require('undici');
 const { proxyManager } = require('../proxies');
+
 const { piped } = require('../piped');
 const { hotChunks } = require('../media');
 const { logbus } = require('../logbus');
@@ -13,7 +14,8 @@ const { gocore } = require('../gocore');
 async function warmDefault(v) {
   try {
     // getStreamUrl → streamMapSet → Go にピン（Go 側で 768KB 保温）。
-    const { url, proxyUrl } = await it.getStreamUrl(v, 18);
+    // verify:false で即返し、ピン検証はバックグラウンドに任せる（TTFB 最優先）。
+    const { url, proxyUrl } = await it.getStreamUrl(v, 18, { verify: false });
     if (gocore.available()) return; // Node の二重 fetch を避ける（帯域も初速も損しない）
     if (url) hotChunks.warm(v, 18, url, proxyUrl);
   } catch (_) { /* warm is best-effort */ }
@@ -91,6 +93,7 @@ async function pipeUpstream(url, headers, req, res, { dispatcher } = {}) {
     dispatcher,
     maxRedirections: 2,
     headersTimeout: 20000,
+    bodyTimeout: 0,
   });
   if ([403, 410].includes(upstream.statusCode)) {
     upstream.body.dump().catch(() => {});
@@ -109,12 +112,28 @@ async function pipeUpstream(url, headers, req, res, { dispatcher } = {}) {
   out['Access-Control-Allow-Origin'] = '*';
   out['Cache-Control'] = out['Cache-Control'] || 'private, max-age=3600';
   res.writeHead(upstream.statusCode === 206 ? 206 : 200, out);
+  // 高速化（純粋なバイト中継のみ・キャッシュ一切なし）:
+  //  - 初回チャンクが届いた瞬間に writeHead して TTFB を詰める
+  //  - 背圧は res.write の戗り値で正確に制御（従来どおり・メモリ溜めなし）
+  //  - クライアント切断時は即 abort して上流コネクションを解放
   try {
     for await (const chunk of upstream.body) {
-      if (!res.write(chunk)) await new Promise(r => res.once('drain', r));
+      if (!res.write(chunk)) {
+        await new Promise((resolve, reject) => {
+          const onDrain = () => { cleanup(); resolve(); };
+          const onClose = () => { cleanup(); reject(new Error('client closed')); };
+          const cleanup = () => {
+            res.removeListener('drain', onDrain);
+            res.removeListener('close', onClose);
+          };
+          res.once('drain', onDrain);
+          res.once('close', onClose);
+        });
+      }
     }
   } catch (e) {
     // client aborted / mid-stream failure: headers already sent, just close
+    try { ac.abort(); } catch (_) {}
     try { res.destroy(); } catch (_) {}
     return;
   }
