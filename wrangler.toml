@@ -11,4 +11,4 @@ workers_dev = true
 
 [vars]
 # オリジン（実際に Persimmon が動いている URL）に変更してください
-ORIGIN = "https://persimmon.onrender.com"
+ORIGIN = "https://test-v1-llytpr.vercel.app/"
