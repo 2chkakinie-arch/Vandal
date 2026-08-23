@@ -6,8 +6,12 @@
  *
  *      internet ─▶ persimmon-edge (Go)        ← $PORT を listen（既定 3000）
  *                     │ 静的アセットをメモリから即配信（gzip 事前圧縮済み）
+ *                     │ /api/stream ピン済み → googlevideo 直中継（Node ホップ無し）
  *                     └─▶ node index.js       ← 127.0.0.1:$INTERNAL_PORT（既定 3101）
- *                          （InnerTube エンジン・プロキシプール等、既存の実績ある実装）
+ *                          │ InnerTube パース / cipher / プロキシプール
+ *                          └─▶ Go fetch-core  ← 127.0.0.1:$CORE_PORT（既定 3102）
+ *                               並列ヘッジ・Range プローブ・ピン登録
+ *                               （コア未起動時は Node 側ヘッジに自動フォールバック）
  *
  * 絶対に落ちない / 遅くならないための安全策:
  *   1. Go バイナリが無い・ビルド失敗 → 自動で「従来どおりの Node 単体」にフォールバック
@@ -23,6 +27,7 @@
  *   PERSIMMON_EDGE=0   エッジを無効化（従来構成で起動）
  */
 import { spawn, spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +37,12 @@ const ROOT = path.join(__dirname, '..');
 
 const PUBLIC_PORT = Number(process.env.PORT) || 3000;
 const INTERNAL_PORT = Number(process.env.INTERNAL_PORT) || 3101;
+let CORE_PORT = Number(process.env.CORE_PORT) || 3102;
+if (CORE_PORT === PUBLIC_PORT || CORE_PORT === INTERNAL_PORT) {
+  CORE_PORT = INTERNAL_PORT + 1;
+  if (CORE_PORT === PUBLIC_PORT) CORE_PORT = INTERNAL_PORT + 2;
+}
+const CORE_TOKEN = process.env.CORE_TOKEN || crypto.randomBytes(16).toString('hex');
 const EDGE_DISABLED = process.env.PERSIMMON_EDGE === '0';
 const NODE_BIN = process.execPath;
 
@@ -39,10 +50,10 @@ const log = (...a) => console.log('[launch]', ...a);
 const warn = (...a) => console.warn('[launch]', ...a);
 
 /** 従来どおり Node 単体で公開ポートを listen する（npm start と同一構成） */
-function startBackend(port, host, label) {
+function startBackend(port, host, label, extraEnv = {}) {
   const child = spawn(NODE_BIN, [path.join(ROOT, 'index.js')], {
     stdio: 'inherit',
-    env: { ...process.env, PORT: String(port), HOST: host, PERSIMMON_MODE: label },
+    env: { ...process.env, PORT: String(port), HOST: host, PERSIMMON_MODE: label, ...extraEnv },
   });
   child.on('error', (e) => warn(`バックエンド起動失敗 (${label}):`, e.message));
   return child;
@@ -105,7 +116,7 @@ function main() {
     return;
   }
 
-  log(`公開ポート :${PUBLIC_PORT} → Go エッジ / バックエンド 127.0.0.1:${INTERNAL_PORT}`);
+  log(`公開ポート :${PUBLIC_PORT} → Go エッジ / バックエンド 127.0.0.1:${INTERNAL_PORT} / fetch-core 127.0.0.1:${CORE_PORT}`);
 
   let backend = null;
   let edge = null;
@@ -118,7 +129,10 @@ function main() {
   }
 
   function startInternalBackend() {
-    backend = startBackend(INTERNAL_PORT, '127.0.0.1', 'supervised');
+    backend = startBackend(INTERNAL_PORT, '127.0.0.1', 'supervised', {
+      CORE_ORIGIN: `http://127.0.0.1:${CORE_PORT}`,
+      CORE_TOKEN,
+    });
     backend.on('exit', (code, sig) => {
       backend = null;
       if (shuttingDown || mode !== 'edge') return;

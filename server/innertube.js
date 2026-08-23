@@ -18,6 +18,8 @@ const { caches, CACHE_MIN } = require('./caches');
 const { YTError } = require('./errors');
 const { API_KEY, HOST_WEB, CLIENTS, PLAYER_CHAIN, probePlayable, sleep, rawFetch, transports, transportsForUrls, callApi, ENDPOINT_LOG_CH, tryParse, fetchText, getVisitorId, getVisitorIdFast } = require('./transport');
 const { deepFind, textOf, bestThumb, extractItems } = require('./parse');
+const { gocore } = require('./gocore');
+const { throwIfHedgeDefinitive } = require('./hedge');
 
 
 
@@ -88,6 +90,15 @@ function streamMapSet(id, entry) {
   caches.streams.set('map:' + id, entry, entry.ttlMs);
   rt.streams['m:' + id] = { e: entry, exp: Date.now() + entry.ttlMs };
   rtSave();
+  if (entry?.map) {
+    gocore.pin({
+      videoId: id,
+      map: entry.map,
+      proxyUrl: entry.proxyUrl || '',
+      exp: Date.now() + (entry.ttlMs || 5 * 3600 * 1000),
+      warmItag: '18',
+    }).catch(() => {});
+  }
 }
 function pdGet(id) {
   const m = caches.streams.get('pd:' + id);
@@ -107,6 +118,7 @@ function streamInvalidate(id) {
   delete rt.streams['m:' + id];
   delete rt.streams['p:' + id];
   rtSave();
+  gocore.unpin(id).catch(() => {});
 }
 
 
@@ -409,98 +421,92 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
   let sabrFallback = null;             // OK response without usable urls
   const spanAll = logbus.span('player', 'player 発行', { v: videoId });
 
-  const tryOnce = async (clientKey, params, transport) => {
+  /**
+   * 1 波を Go（または Node フォールバック）ヘッジで同時発射。
+   * 最初の playability=OK が勝った瞬間に敗者をキャンセルする。
+   * 応答形は旧 tryOnce と同一 {res, transport, usable, clientKey, params}。
+   */
+  const buildPlayerReq = (clientKey, params, transport, gl2 = gl) => {
     const client = CLIENTS[clientKey];
-    const dedupeKey = `${clientKey}|${params || '-'}|${transport?.url || 'direct'}`;
-    if (used.has(dedupeKey)) return null;
-    used.add(dedupeKey);
     const payload = { videoId, contentCheckOk: true, racyCheckOk: true };
     if (params) payload.params = params;
-    const ret = {};
-    let res;
-    try {
-      res = await callApi('player', payload, client, { transport, timeout: 8000, ret });
-    } catch (e) {
-      lastErr = e;
+    return {
+      id: `${clientKey}|${params || '-'}|${transport?.url || 'direct'}|${gl2}`,
+      method: 'POST',
+      url: `${HOST_WEB}/youtubei/v1/player?key=${client.key}`,
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': client.ua,
+        'X-YouTube-Client-Name': client.clientNameHeader,
+        'X-YouTube-Client-Version': client.ctx.clientVersion,
+        Origin: HOST_WEB,
+      },
+      body: JSON.stringify({ ...payload, context: { client: { hl, gl: gl2, ...client.ctx } } }),
+      proxy: transport?.kind === 'proxy' ? transport.url : '',
+      timeoutMs: 8000,
+      _spec: { clientKey, params, transport, gl: gl2 },
+    };
+  };
+
+  const applyAttemptEffects = (reqs, result) => {
+    for (const a of result?.attempts || []) {
+      const spec = reqs.find((r) => r.id === a.id)?._spec;
+      if (!spec) continue;
+      if (a.playability) lastStatus = { status: a.playability, reason: a.reason || '' };
+      if (a.playability === 'LOGIN_REQUIRED' && spec.transport?.kind === 'proxy') {
+        proxyManager.markIssuerBad(spec.transport.url);
+      }
+      if (a.accept && spec.transport?.kind === 'proxy') proxyManager.markGood(spec.transport.url, a.ms);
+      else if (!a.accept && a.err !== 'canceled' && spec.transport?.kind === 'proxy'
+        && (!a.playability || a.playability === 'OK') && (a.status >= 500 || a.status === 0)) {
+        proxyManager.markBad(spec.transport.url);
+      }
+    }
+  };
+
+  const runWave = async (specs, gl2 = gl) => {
+    const reqs = [];
+    for (const s of specs) {
+      const dedupeKey = `${s.clientKey}|${s.params || '-'}|${s.transport?.url || 'direct'}|${gl2}`;
+      if (used.has(dedupeKey)) continue;
+      used.add(dedupeKey);
+      reqs.push(buildPlayerReq(s.clientKey, s.params, s.transport, gl2));
+    }
+    if (!reqs.length) return null;
+    const result = await gocore.hedge(reqs, { kind: 'player' });
+    applyAttemptEffects(reqs, result);
+    if (result?.status === 451) throwIfHedgeDefinitive(result);
+    if (!result?.ok || !result.body) {
+      const regional = (result?.attempts || []).some((a) => /国|地域|region|country|お住まい/i.test(String(a.reason || a.err || '')));
+      if (regional && gl2 !== 'US') return runWave(specs, 'US');
+      lastErr = lastErr || new YTError('wave failed', 502);
       return null;
     }
-    // 地域制限は gl を切り替えると通る場合がある（Invidious 式リージョンバイパス）。
-    // 表示先 gl=JP で弾かれた動画を gl=US で一度だけ再発行する。
-    {
-      const st0 = res?.playabilityStatus || {};
-      if (st0.status !== 'OK' && /国|地域|region|country|お住まい/i.test(String(st0.reason || ''))) {
-        try {
-          const res2 = await callApi('player', {
-            videoId, contentCheckOk: true, racyCheckOk: true, ...(params ? { params } : {}),
-          }, client, { transport, timeout: 8000, ret, hl: 'ja', gl: 'US' });
-          if (res2?.playabilityStatus?.status === 'OK') res = res2;
-        } catch (_) { /* keep original */ }
-      }
-    }
-    const ps = res?.playabilityStatus || {};
-    lastStatus = ps;
-    // プロキシ経由で LOGIN_REQUIRED = その proxy IP が発行用途では使い物にならない
-    // →  issuer-grade から即降格（中継/トンネル用途には存続。YouTubeのBAN判定に追随）
-    if (ps.status === 'LOGIN_REQUIRED' && (transport?.kind === 'proxy' || ret.transport?.kind === 'proxy')) {
-      proxyManager.markIssuerBad((ret.transport || transport)?.url);
-    }
-    if (ps.status !== 'OK') {
-      // definitive blocks that rotation will never fix: stop everything
-      if (['UNPLAYABLE', 'AGE_CHECK_REQUIRED', 'CONTENT_NOT_AVAILABLE_IN_THIS_APP'].includes(ps.status)
-        && !/ログイン|sign in/i.test(ps.reason || '')) {
-        throw new YTError(ps.reason || ps.status, 451, ps.status);
-      }
-      lastErr = new YTError(ps.reason || ps.status || '再生できません', 451, ps.status || 'UNPLAYABLE');
-      return null; // LOGIN_REQUIRED / ERROR -> keep rotating
-    }
+    const spec = reqs.find((r) => r.id === result.winner)?._spec;
+    let res;
+    try { res = JSON.parse(result.body); } catch (_) { lastErr = new YTError('bad json', 502); return null; }
+    lastStatus = res.playabilityStatus || lastStatus;
     const sd = res.streamingData || {};
     const fmt = sd.formats || [];
     const af = sd.adaptiveFormats || [];
     if (!fmt.length && !af.length && !sd.hlsManifestUrl) { lastErr = new YTError('no formats', 502); return null; }
     try { await solveCiphers([...fmt, ...af]); } catch (_) { /* keep url'd ones */ }
     const usable = [...fmt, ...af];
-    const urlCount = usable.filter(f => f.url).length;
-    if (!urlCount && !sd.hlsManifestUrl) {
-      sabrFallback = sabrFallback || { res, transport, usable };
+    if (!usable.filter((f) => f.url).length && !sd.hlsManifestUrl) {
+      sabrFallback = sabrFallback || { res, transport: spec?.transport, usable };
       lastErr = new YTError('no usable formats (SABR-only)', 502);
       return null;
     }
-    return { res, transport: ret.transport || transport, usable, clientKey, params };
+    return { res, transport: spec?.transport || null, usable, clientKey: spec?.clientKey, params: spec?.params };
   };
+
+  const specsOf = (steps) => steps.flatMap((s) => (s.transports || []).map((t) => ({ clientKey: s.clientKey, params: s.params, transport: t })));
 
   // ---- assemble attempts: good combo first, then the full chain
   const directT = { kind: 'direct', dispatcher: undefined };
   // 発行は issuer-grade（YouTube非BAN実測済み）プロキシを最優先で選ぶ。
   // 無ければ従来プール（pickIssuer 内部で自動フォールバック）。
   const proxyUrls = (n) => { const out = []; const seen = new Set(); for (let i = 0; i < n * 2 && out.length < n; i++) { const u = proxyManager.pickIssuer(out); if (u && !seen.has(u)) { seen.add(u); out.push(u); } else break; } return out; };
-
-  /**
-   * 高速化（並列ヘッジ）: かつては direct → proxy1 → proxy2 … を直列に総当たり
-   * しており、コールド時の初回視聴が「1 本失敗 ≒ +数秒」で劣化していた。
-   * 新方式では各波で 2〜3 経路を**同時に**撃ち、最初に OK が戻った瞬間に確定する
-   * （プロキシレース）。serial だった worst = N×timeout が max(1×timeout) になる。
-   * 定番 (goodCombo) があるときはさらに direct 1 本を保険で並走させ、
-   * 「定番が死んでいた瞬間」の数的確定待ちも消している。
-   */
-  const firstWin = (jobs) => new Promise((resolve, reject) => {
-    let pending = jobs.length;
-    let settled = false;
-    let softErr = null;
-    if (!pending) { reject(new YTError('no transports', 502)); return; }
-    for (const p of jobs) {
-      Promise.resolve(p).then((r) => {
-        if (settled) return;
-        if (r) { settled = true; resolve(r); }
-        else if (--pending <= 0) { settled = true; reject(softErr || new YTError('wave failed', 502)); }
-      }).catch((e) => {
-        if (settled) return;
-        // definitive unplayable (UNPLAYABLE / AGE_CHECK …) はレース全中止で即報告
-        if (e && e.status === 451) { settled = true; reject(e); return; }
-        softErr = softErr || e;
-        if (--pending <= 0) { settled = true; reject(softErr); }
-      });
-    }
-  });
 
   const step0 = PLAYER_CHAIN[0];
   const wave1 = [];
@@ -513,7 +519,7 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
 
   let win = null;
   try {
-    win = await firstWin(wave1.flatMap(s => s.transports.map(t => tryOnce(s.clientKey, s.params, t))));
+    win = await runWave(specsOf(wave1));
   } catch (e) {
     if (e && e.status === 451) { lastErr = e; win = null; }
     else lastErr = e;
@@ -528,9 +534,9 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
       const step = PLAYER_CHAIN[idx];
       if (Date.now() > deadline) break outer;
       const n = idx === 0 ? 4 : idx === 1 ? 3 : 2; // proxy fan-out per client
-      const transports = [directT, ...transportsForUrls(proxyUrls(n))];
+      const waveTs = [directT, ...transportsForUrls(proxyUrls(n))];
       try {
-        const r = await firstWin(transports.map(t => tryOnce(step.client, step.params, t)));
+        const r = await runWave(waveTs.map(t => ({ clientKey: step.client, params: step.params, transport: t })));
         if (r) { win = r; break outer; }
       } catch (e) {
         if (e && e.status === 451) { lastErr = e; break outer; } // definitive unplayable
@@ -559,7 +565,7 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
         try {
           // 高速化: 緊急時こそ直列総当たりは致命的に遅い — 各ステップの全経路を
           // 同時レースにして、最初に生き残った egress で即確定する
-          const r = await firstWin(step.transports.map(t => tryOnce(step.clientKey, step.params, t)));
+          const r = await runWave(step.transports.map(t => ({ clientKey: step.clientKey, params: step.params, transport: t })));
           if (r) { win = r; break; }
         } catch (e) {
           if (e && e.status === 451) { lastErr = e; break; }
@@ -846,23 +852,23 @@ function probeDirectness(videoId, p) {
   const running = _pdPending.get(videoId);
   if (running) return running;
   const job = (async () => {
-    const dualProbe = async (url) => {
+    const dualProbe = async (url, tag) => {
       if (!url) return false;
       const tps = await getTunnelProxies(2);
       const jobs = [
-        probePlayable(url, { timeout: 6000 }), // 自 egress
-        ...tps.map(px => probePlayable(url, { dispatcher: proxyManager.dispatcherFor(px), timeout: 9000 })), // トンネル egress
+        { id: `${tag}-self`, url, proxy: '', timeoutMs: 6000 },
+        ...tps.map((px, i) => ({ id: `${tag}-t${i}`, url, proxy: px, timeoutMs: 9000 })),
       ];
-      const rs = await Promise.all(jobs);
-      return rs.some(Boolean);
+      const r = await gocore.probe(jobs);
+      return (r?.results || []).some((x) => x.ok);
     };
     const progItag = p.progressive?.[0]?.itag ?? (p.__urlMap[18] ? 18 : Number(Object.keys(p.__urlMap)[0]));
     const vidTrack = p.videos.find(v => (v.height || 0) <= 720 && (v.fps || 30) <= 60) || p.videos[0];
     const audTrack = p.audios[0];
     const [progOk, vOk, aOk] = await Promise.all([
-      dualProbe(p.__urlMap[progItag]),
-      dualProbe(p.__urlMap[vidTrack?.itag]),
-      dualProbe(p.__urlMap[audTrack?.itag]),
+      dualProbe(p.__urlMap[progItag], 'p'),
+      dualProbe(p.__urlMap[vidTrack?.itag], 'v'),
+      dualProbe(p.__urlMap[audTrack?.itag], 'a'),
     ]);
     const pd = { playDirect: progOk, hdDirect: !!(vOk && aOk) };
     pdSet(videoId, pd, 55 * CACHE_MIN);
@@ -895,7 +901,7 @@ async function ensureWorkingPin(videoId) {
   for (const t of await getTunnelProxies(2)) addCand(t);
   const results = await Promise.all(cands.map(px =>
     // 無料プロキシ経由は RTT が大きいため広めのタイムアウトを与える
-    probePlayable(url, { dispatcher: px ? proxyManager.dispatcherFor(px) : undefined, timeout: px ? 9000 : 6000 })
+    probePlayable(url, { proxyUrl: px || '', timeout: px ? 9000 : 6000 })
   ));
   const idx = results.findIndex(Boolean);
   if (idx >= 0) {

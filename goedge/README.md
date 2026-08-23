@@ -41,9 +41,15 @@ go test ./...                                                 # ユニットテ�
 | `EDGE_BOOT_TIMEOUT_MS` | 45000 | 初回取り込みのリトライ総時間 |
 | `EDGE_HEALTH_GRACE_MS` | 60000 | 起動直後の healthz 200 猶予 |
 | `EDGE_VERBOSE` | - | `1` で詳細ログ |
+| `CORE_PORT` | 0（無効） | 動画取得コアのループバックポート。`launch.mjs` は 3102 を渡す |
+| `CORE_BIND` | 127.0.0.1 | コアのバインド。公開面には出さない |
+| `CORE_TOKEN` | - | 任意の共有秘密（`X-Persimmon-Core`）。ランチャーが自動生成 |
+| `EDGE_ALLOW_LOCAL` | - | `1` のときだけコアが localhost へ出られる（ユニットテスト用） |
 
 ## エンドポイント
 
-- `GET /__edge/healthz` — `{"ok":true,"mode":"go-edge","assets":5,"assetTotal":5,"originUp":true,...}`
+- `GET /__edge/healthz` — `{"ok":true,"mode":"go-edge","assets":5,"assetTotal":5,"originUp":true,"core":{...}}`
   （Docker HEALTHCHECK / Railway / Render のヘルスチェック用）
+- ループバック専用（公開されない）:
+  - `GET  /health` `POST /v1/hedge` `POST /v1/fetch` `POST /v1/probe` `POST|DELETE|GET /v1/pin`
 - その他の `/__edge/*` はオリジンへ透過（未知パスの挙動も従来と一致）

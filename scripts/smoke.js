@@ -84,6 +84,11 @@ async function main() {
   const it = require('../server/innertube');
   check('innertube exports intact', ['search', 'getVideoFull', 'player', 'getStreamUrl', 'refreshStreamMap', 'getVisitorId'].every(k => typeof it[k] === 'function'));
 
+  const { gocore } = require('../server/gocore');
+  const { hedge } = require('../server/hedge');
+  check('gocore fallback is quiet without CORE_ORIGIN', gocore.available() === false);
+  check('node hedge export is a function', typeof hedge === 'function');
+
   if (failures) { console.error(`\n${failures} check(s) failed`); process.exit(1); }
   console.log('\nall smoke checks passed');
   process.exit(0);

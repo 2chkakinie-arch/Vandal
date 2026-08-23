@@ -48,6 +48,9 @@ type config struct {
 	bootTimeout  time.Duration // 初回アセット取り込みの総リトライ時間（既定 45s）
 	healthGrace  time.Duration // 起動直後、origin down でも healthz を 200 にする猶予（既定 60s）
 	verbose      bool
+	coreBind     string // fetch-core バインド（既定 127.0.0.1 — 公開しない）
+	corePort     int    // fetch-core ポート（CORE_PORT、0=無効）
+	coreToken    string // 任意の共有秘密（X-Persimmon-Core）
 }
 
 func envInt(name string, def, min, max int) int {
@@ -75,6 +78,10 @@ func loadConfig() *config {
 	if bind == "" {
 		bind = "0.0.0.0"
 	}
+	coreBind := strings.TrimSpace(os.Getenv("CORE_BIND"))
+	if coreBind == "" {
+		coreBind = "127.0.0.1"
+	}
 	return &config{
 		bind:         bind,
 		port:         port,
@@ -83,6 +90,9 @@ func loadConfig() *config {
 		bootTimeout:  time.Duration(envInt("EDGE_BOOT_TIMEOUT_MS", 45000, 1000, 10*60*1000)) * time.Millisecond,
 		healthGrace:  time.Duration(envInt("EDGE_HEALTH_GRACE_MS", 60000, 0, 10*60*1000)) * time.Millisecond,
 		verbose:      os.Getenv("EDGE_VERBOSE") == "1",
+		coreBind:     coreBind,
+		corePort:     envInt("CORE_PORT", 0, 0, 65535),
+		coreToken:    strings.TrimSpace(os.Getenv("CORE_TOKEN")),
 	}
 }
 
@@ -456,6 +466,13 @@ func main() {
 	puller := newPuller(cfg, store)
 	monitor := newOriginMonitor(cfg)
 	proxy := newOriginProxy(cfg)
+	pool := newClientPool()
+	pins := newPinStore(pool)
+	stats := &coreStats{}
+	rtEdge.pins = pins
+	rtEdge.pool = pool
+	rtEdge.stats = stats
+	coreSrv := startCore(cfg, pins, pool, stats)
 	boot := time.Now()
 
 	// 初回取り込み: bootTimeout の間リトライ。揃わなくても起動は止めない
@@ -464,17 +481,26 @@ func main() {
 		deadline := time.Now().Add(cfg.bootTimeout)
 		for {
 			missing := 0
+			var wg sync.WaitGroup
+			var mu sync.Mutex
 			for _, p := range assetPaths {
 				if store.get(p) != nil {
 					continue
 				}
-				if err := puller.pullOne(p); err != nil {
-					missing++
-					if cfg.verbose {
-						log.Printf("[edge] asset pull pending %s: %v", p, err)
+				wg.Add(1)
+				go func(p string) {
+					defer wg.Done()
+					if err := puller.pullOne(p); err != nil {
+						mu.Lock()
+						missing++
+						mu.Unlock()
+						if cfg.verbose {
+							log.Printf("[edge] asset pull pending %s: %v", p, err)
+						}
 					}
-				}
+				}(p)
 			}
+			wg.Wait()
 			if missing == 0 {
 				log.Printf("[edge] 静的アセット %d 件をメモリに載せました（gzip 事前圧縮済み, %dms）", store.count(), time.Since(boot).Milliseconds())
 				return
@@ -511,6 +537,11 @@ func main() {
 			serveHealth(w, cfg, monitor, store, boot)
 			return
 		}
+		// 動画ストリーム高速パス: ピン済みなら Node を経由せず googlevideo へ。
+		// ピンが無い・raw=・403 などは false を返して従来どおり Node へ落とす。
+		if tryServePinnedStream(w, r, pins, stats) {
+			return
+		}
 		// 高速パスは安全な条件のときだけ:
 		//   GET/HEAD である・Range 指定なし・アセットがメモリにある
 		// それ以外はすべて origin へ素通し（= 従来の挙動と完全一致）
@@ -544,6 +575,9 @@ func main() {
 		stopMon()
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
+		if coreSrv != nil {
+			_ = coreSrv.Shutdown(ctx)
+		}
 		_ = srv.Shutdown(ctx)
 	}()
 
@@ -567,7 +601,7 @@ func serveHealth(w http.ResponseWriter, cfg *config, mon *originMonitor, store *
 	} else {
 		w.WriteHeader(http.StatusOK)
 	}
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	payload := map[string]interface{}{
 		"ok":          ok,
 		"mode":        "go-edge",
 		"origin":      cfg.origin.Scheme + "://" + cfg.origin.Host,
@@ -576,5 +610,13 @@ func serveHealth(w http.ResponseWriter, cfg *config, mon *originMonitor, store *
 		"assets":      store.count(),
 		"assetTotal":  len(assetPaths),
 		"uptimeMs":    time.Since(boot).Milliseconds(),
-	})
+	}
+	if rtEdge.stats != nil {
+		pinN := 0
+		if rtEdge.pins != nil {
+			pinN = rtEdge.pins.count()
+		}
+		payload["core"] = rtEdge.stats.snapshot(pinN, rtEdge.listen, rtEdge.up.Load())
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
