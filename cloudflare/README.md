@@ -15,7 +15,7 @@ Worker のエッジキャッシュ」**という 2 層構成にします。SPA �
 
 ```bash
 # 1. オリジン URL を自分のものに変更（Render / Railway の公開 URL）
-$EDITOR wrangler.toml        # [vars] ORIGIN = "https://your-persimmon.example"
+$EDITOR wrangler.toml        # [vars] ORIGIN = "https://your-vandal.example"
 
 # 2. デプロイ（wrangler は npm から入ります）
 npm i -D wrangler            # 任意（npx でも可）
@@ -23,16 +23,16 @@ npx wrangler login
 npx wrangler deploy
 ```
 
-デプロイ後は `https://persimmon-edge.<あなた>.workers.dev` が公開 URL になります。
+デプロイ後は `https://vandal-edge.<あなた>.workers.dev` が公開 URL になります。
 
 ## カスタムドメイン
 
-Cloudflare ダッシュボード → Workers → persimmon-edge → Settings → Triggers で
+Cloudflare ダッシュボード → Workers → vandal-edge → Settings → Triggers で
 `example.com` 等のカスタムドメインを割り当てられます（Cloudflare 管理の DNS が必要）。
 
 ## キャッシュ挙動の確認
 
-`x-persimmon-cf` 応答ヘッダが付きます:
+`x-vandal-cf` 応答ヘッダが付きます:
 
 | 値 | 意味 |
 |---|---|

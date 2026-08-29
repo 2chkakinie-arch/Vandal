@@ -1,5 +1,5 @@
 'use strict';
-/** 分散ソースのバンドル配信（/app.js, /styles.css）— llytpr-wl.v01nh. */
+/** 分散ソースのバンドル配信（/app.js, /styles.css）— Vandal. */
 const express = require('express');
 const bundle = require('../client-bundle');
 

@@ -192,7 +192,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
     const canDash = !!(audTrack && autoTrack && DashLite.isSupported(autoTrack, audTrack));
     let activeTrack = null;
 
-    // llytpr++ 直結: 生 URL がある限り常に「影武者プローブ」で直結を試す。
+    // Vandal 直結: 生 URL がある限り常に「影武者プローブ」で直結を試す。
     // 従来はサーバー側実測 (streams.playDirect) が true の時しか試さず、
     // 「サーバー egress は 403 でも ユーザー網からは直接再生できる」動画が
     // 無条件にプロキシされ続けるバグがあった。影武者はリレー再生を一切妨げない
@@ -313,7 +313,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
         };
         try {
         if (!track || !audTrack) return finish(false);
-        // raw モード(llytpr++ 直結HD): <video>/<audio> のメディア要素は CORS 不要の
+        // raw モード(Vandal 直結HD): <video>/<audio> のメディア要素は CORS 不要の
         // ため、生 googlevideo URL をそのまま装着できる（MSE と違い fetch を通らない）。
         const vSrc = raw ? streams.directUrls?.[track.itag] : `/api/stream?v=${id}&itag=${track.itag}`;
         const aSrc = raw ? streams.directUrls?.[audTrack.itag] : `/api/stream?v=${id}&itag=${audTrack.itag}`;
@@ -391,7 +391,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
     }
 
     /**
-     * llytpr++ 直結スワップ: 生 googlevideo/Piped URL を不可視の「影武者」<video> で
+     * Vandal 直結スワップ: 生 googlevideo/Piped URL を不可視の「影武者」<video> で
      * 先行試聴し、実際に再生時間が進むことを確認できた時だけ本体に載せ替える。
      * 失敗しても本体（リレー再生中）は一切妨げられない = 直結判定を常に楽観試行できる。
      */
@@ -539,14 +539,14 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           // 直結スワップ後に止まった: ページ全体を再構築せずリレーへ即復帰
           // （従来は fatalRescue で全面リロードしており、再生できる状態まで
           // 画面を落としてしまう過剰反応だった）
-          console.warn('[llytpr++] direct stall detected — reverting to relay');
+          console.warn('[Vandal] direct stall detected — reverting to relay');
           Store.setExp('directBlocked', true, DIRECT_BLOCK_TTL);
           toast('直結が不安定なためリレーに切り替えます');
           startProg(bestProg, Math.max(video.currentTime, resumeAt || 0));
           return;
         }
         if (rescues < 3) {
-          console.warn('[llytpr++] stall detected (' + tag + ') — rescuing');
+          console.warn('[Vandal] stall detected (' + tag + ') — rescuing');
           fatalRescue(true);
         } else {
           unplayableBox('ストリームに接続できませんでした', 'ネットワークが googlevideo への接続を制限している可能性があります');
@@ -672,7 +672,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
   function setupAsk(d) {
     const btn = $('#ask-btn');
     if (!btn) return;
-    const ASK_KEY = 'llytpr:ask:' + id;
+    const ASK_KEY = 'vandal:ask:' + id;
     let msgs = [];
     try { msgs = JSON.parse(sessionStorage.getItem(ASK_KEY) || '[]') || []; } catch (_) { msgs = []; }
     const saveMsgs = () => { try { sessionStorage.setItem(ASK_KEY, JSON.stringify(msgs.slice(-16))); } catch (_) {} };
@@ -785,24 +785,35 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
         }
         let cont = c.continuation;
         let loading = false;
+        let retries = 0;
         box.innerHTML = `
           <h3><span id="cm-count">${c.count ? esc(c.count) + ' 件のコメント' : 'コメント'}</span>
           <span class="cm-sort"><svg viewBox="0 0 24 24" class="ic" style="width:20px;height:20px"><path d="M3 6h14v2H3zm0 5h10v2H3zm0 5h6v2H3z"/></svg>並べ替え</span></h3>
           <div id="cm-list">${(c.comments || []).map(commentHtml).join('')}</div>`;
         if (cont) {
-          const sent = lazySentinel(box, () => {
-            if (loading || !cont) return;
+          // 永久読み込み: 継続トークンがある限りスクロールで自動追記し続ける。
+          // 失敗しても即座に打ち切らず、リトライで追記を再開する。
+          let sent = null;
+          const loadMore = () => {
+            if (destroyed || loading || !cont) return;
             loading = true;
             api('/api/comments/next?c=' + encodeURIComponent(cont), { ttl: 5 * 60e3 })
               .then((n) => {
                 loading = false;
+                retries = 0;
                 cont = n.continuation;
                 const list = $('#cm-list');
                 if (list) list.insertAdjacentHTML('beforeend', (n.comments || []).map(commentHtml).join(''));
-                if (!cont) sent.done();
+                if (!cont) { sent?.done(); sent = null; }
               })
-              .catch(() => { loading = false; sent.done(); });
-          });
+              .catch(() => {
+                loading = false;
+                retries++;
+                if (retries <= 3) setTimeout(loadMore, 800 * retries); // 自動リトライ
+                else { sent?.done(); sent = null; } // 何度も失敗 → 停止（再訪で再開）
+              });
+          };
+          sent = lazySentinel(box, loadMore);
         }
       })
       .catch(() => { const b = $('#comments'); if (b) b.innerHTML = `<h3>コメント</h3><div class="cm-disabled">コメントを読み込めませんでした。</div>`; });

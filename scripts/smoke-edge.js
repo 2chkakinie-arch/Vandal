@@ -14,7 +14,7 @@
  *
  * Run: npm run test:edge
  */
-process.env.LLYTPR_NO_PROXY = '1';
+process.env.VANDAL_NO_PROXY = '1';
 
 const http = require('node:http');
 const zlib = require('node:zlib');
@@ -24,7 +24,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
-const EDGE_BIN = path.join(ROOT, 'goedge', 'bin', 'persimmon-edge');
+const EDGE_BIN = path.join(ROOT, 'goedge', 'bin', 'vandal-edge');
 
 const children = [];
 let failures = 0;
@@ -192,29 +192,12 @@ async function main() {
   ]);
   check('POST method parity (404 both)', pD.status === pE.status && pD.body.equals(pE.body));
 
-  /* --- D. SSE がバッファされず即時に流れる --- */
-  const sse = await new Promise((resolve, reject) => {
-    const t0 = Date.now();
-    const r = http.request({
-      host: '127.0.0.1', port: EDGE_PORT, path: '/api/diag/logs?sse=1',
-      headers: { 'Accept-Encoding': 'identity' },
-    }, (res) => {
-      let head = '';
-      res.on('data', (c) => {
-        head += c.toString();
-        if (head.includes('retry:')) {
-          res.destroy();
-          resolve({ status: res.statusCode, ct: res.headers['content-type'], ms: Date.now() - t0 });
-        }
-      });
-      res.on('error', () => resolve({ status: res.statusCode, ct: res.headers['content-type'], ms: Date.now() - t0, head }));
-      setTimeout(() => { res.destroy(); reject(new Error('SSE no data within 5s')); }, 5000);
-    });
-    r.on('error', reject);
-    r.end();
-  });
-  check('SSE streams unbuffered through edge', sse.ct && sse.ct.includes('text/event-stream') && sse.ms < 3000,
-    `ct=${sse.ct} ms=${sse.ms}`);
+  /* --- D. メッシュ状態（JSON）がエッジを透過する --- */
+  const [mD, mE] = await Promise.all([
+    req(BACK_PORT, '/api/mesh/state', { headers: { 'Accept-Encoding': 'identity' } }),
+    req(EDGE_PORT, '/api/mesh/state', { headers: { 'Accept-Encoding': 'identity' } }),
+  ]);
+  check('/api/mesh/state parity (200 both)', mD.status === 200 && mE.status === 200 && mD.body.equals(mE.body));
 
   edge.kill('SIGTERM');
   backend.kill('SIGTERM');
@@ -251,7 +234,7 @@ async function main() {
   const PUB2 = await freePort();
   try {
     const legacy = spawnLogged(process.execPath, [path.join(ROOT, 'scripts', 'launch.mjs')], {
-      env: { ...process.env, PORT: String(PUB2), PATH: '/usr/bin:/bin', PERSIMMON_EDGE_BIN: '/nonexistent/edge' },
+      env: { ...process.env, PORT: String(PUB2), PATH: '/usr/bin:/bin', VANDAL_EDGE_BIN: '/nonexistent/edge' },
     });
     await waitFor(async () => (await req(PUB2, '/api/health').catch(() => null))?.status === 200, 'legacy fallback up');
     const h = await req(PUB2, '/api/health', { headers: { 'Accept-Encoding': 'identity' } });

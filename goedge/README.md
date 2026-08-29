@@ -1,6 +1,6 @@
-# persimmon-edge（Go エッジアクセラレータ）
+# vandal-edge（Go エッジアクセラレータ）
 
-Persimmon の配信基盤となる Go 製フロントサーバー。**標準ライブラリのみ**
+Vandal の配信基盤となる Go 製フロントサーバー。**標準ライブラリのみ**
 （外部モジュール依存ゼロ）なので、Go ≥ 1.20 さえあればオフラインでもビルドできます。
 
 ## 役割
@@ -26,7 +26,7 @@ Persimmon の配信基盤となる Go 製フロントサーバー。**標準ラ�
 
 ```bash
 cd goedge
-go build -trimpath -ldflags "-s -w" -o bin/persimmon-edge .   # ビルド
+go build -trimpath -ldflags "-s -w" -o bin/vandal-edge .   # ビルド
 go test ./...                                                 # ユニットテスト
 ```
 
@@ -43,7 +43,7 @@ go test ./...                                                 # ユニットテ�
 | `EDGE_VERBOSE` | - | `1` で詳細ログ |
 | `CORE_PORT` | 0（無効） | 動画取得コアのループバックポート。`launch.mjs` は 3102 を渡す |
 | `CORE_BIND` | 127.0.0.1 | コアのバインド。公開面には出さない |
-| `CORE_TOKEN` | - | 任意の共有秘密（`X-Persimmon-Core`）。ランチャーが自動生成 |
+| `CORE_TOKEN` | - | 任意の共有秘密（`X-Vandal-Core`）。ランチャーが自動生成 |
 | `EDGE_ALLOW_LOCAL` | - | `1` のときだけコアが localhost へ出られる（ユニットテスト用） |
 
 ## エンドポイント

@@ -1,5 +1,5 @@
 'use strict';
-/** Shared HTTP helpers + relay state for the llytpr-wl.v01nh route modules. */
+/** Shared HTTP helpers + relay state for the Vandal route modules. */
 const { request: undiciRequest } = require('undici');
 const { proxyManager } = require('../proxies');
 

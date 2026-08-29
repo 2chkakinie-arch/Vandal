@@ -78,452 +78,119 @@ function renderSubscriptions() {
   });
 }
 
-/* ========================================================== SETTINGS (+診断) */
-/**
- * 設定・診断ページ（#/settings）
- *  - エンジン設定: プロキシ運用モード / プールサイズ / 先読み量 / 各種トグル
- *  - プロキシプール: 生きているプロキシの一覧・等級（L1/L2/L3）をライブ表示
- *  - プロキシレース: L1→L2→L3 段階選抜の同時レースを実行して勝者を決定
- *  - ストリーム取得テスト: 発行〜初バイトまでの実測タイミング
- *  - メタ情報取得テスト: watchNext / コメント(トークン有無) / 検索のタイミング
- *  - ライブログ: サーバー内の超細かいログを SSE でリアルタイム閲覧
- */
+/* ========================================================== SETTINGS (一般) */
 function renderSettings() {
   setActiveNav('settings');
-  let destroyed = false;
-  const timers = [];
-  let es = null;          // EventSource (SSE ログ)
-  let esPaused = false;
-  let logLines = 0;
 
   app.innerHTML = `
   <div class="set-page">
     <div class="set-head">
-      <img src="/logo.png" alt="" class="set-logo">
+      <img src="/logo.svg" alt="" class="set-logo">
       <div>
-        <h1>設定・診断</h1>
-        <p class="set-sub">エンジンの挙動変更・プロキシの実測テスト・超精密ライブログ</p>
+        <h1>設定</h1>
+        <p class="set-sub">外観とデータの一般的な設定</p>
       </div>
-      <div class="set-head-stats" id="st-summary"></div>
     </div>
 
-    <!-- ================= エンジン設定 ================= -->
-    <section class="set-card" id="sec-engine">
-      <h2><span class="set-ic">⚙️</span>エンジン設定 <span class="set-badge" id="cfg-dirty" style="display:none">未保存</span></h2>
-      <div class="set-grid">
-        <div class="set-field span2">
-          <label>プロキシ運用モード <span class="set-hint">InnerTube 発行と中継にプロキシをどう使うか</span></label>
-          <div class="seg" id="cfg-proxyMode">
-            <button data-v="auto" class="sel">自動<small>プロキシ優先 + 直結保険</small></button>
-            <button data-v="proxy">プロキシのみ<small>直結を極力使わない</small></button>
-            <button data-v="direct">直結のみ<small>プロキシ不使用（BAN時は不可）</small></button>
-          </div>
-        </div>
-        <div class="set-field">
-          <label>プール維持数 <output id="cfg-poolSize-o"></output><span class="set-hint">常時温存するプロキシの数</span></label>
-          <input type="range" id="cfg-poolSize" min="8" max="120" step="2">
-        </div>
-        <div class="set-field">
-          <label>先読み量 <output id="cfg-warmBytes-o"></output><span class="set-hint">ホットキャッシュの先頭プリフェッチ</span></label>
-          <input type="range" id="cfg-warmBytes" min="64" max="4096" step="64">
-        </div>
-        <div class="set-field"><label class="tgl"><input type="checkbox" id="cfg-certify"><span>L2/L3 認定を回す<small>googlevideo トンネル・発行可否の実測</small></span></label></div>
-        <div class="set-field"><label class="tgl"><input type="checkbox" id="cfg-commentsPrefetch"><span>コメント先行取得<small>watch 表示直後に裏で取得して即表示</small></span></label></div>
-        <div class="set-field"><label class="tgl"><input type="checkbox" id="cfg-homeKeepWarm"><span>ホーム常時暖機<small>誰かが見ている間キャッシュを保つ</small></span></label></div>
-        <div class="set-field span2">
-          <label>ログ最小レベル <span class="set-hint">SSE 配信されるログの下限（負荷に合わせて）</span></label>
-          <div class="seg seg-sm" id="cfg-logLevel">
-            ${['trace', 'debug', 'info', 'warn', 'error'].map(l => `<button data-v="${l}">${l}</button>`).join('')}
-          </div>
-        </div>
-      </div>
+    <section class="set-card">
+      <h2><span class="set-ic">🎨</span>外観</h2>
       <div class="set-actions">
-        <button class="set-btn primary" id="cfg-save">保存して適用</button>
-        <button class="set-btn" id="cfg-reset-values">初期値に戻す</button>
-        <span class="set-note" id="cfg-note"></span>
+        <div class="seg seg-sm" id="cfg-theme" style="max-width:340px">
+          <button data-v="light">ライト</button>
+          <button data-v="dark">ダーク</button>
+        </div>
       </div>
     </section>
 
-    <!-- ================= プロキシプール ================= -->
-    <section class="set-card" id="sec-pool">
-      <h2><span class="set-ic">🛰️</span>プロキシプール <span class="set-live" id="pool-live">●</span></h2>
-      <div class="set-kv" id="pool-kv"></div>
+    <section class="set-card">
+      <h2><span class="set-ic">🧹</span>データ管理</h2>
       <div class="set-actions">
-        <button class="set-btn" id="pool-refresh">💧 プールを強制更新（全候補再スキャン）</button>
-        <button class="set-btn" id="pool-certify">🏅 L2/L3 認定を今すぐ実行</button>
+        <button class="set-btn" id="s-clear-history">履歴を全消去</button>
+        <button class="set-btn" id="s-clear-cache">セッションキャッシュを消去</button>
+        <button class="set-btn warn" id="s-clear-all">すべてのローカルデータを消去</button>
       </div>
-      <div class="pool-table-wrap">
-        <table class="pool-table" id="pool-table">
-          <thead><tr><th>プロキシ</th><th>遅延</th><th>等級</th><th>失敗</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
+      <p class="set-note">履歴・高評価・保存・登録チャンネルは、この端末のブラウザ内にのみ保存されます。</p>
     </section>
 
-    <!-- ================= プロキシレース ================= -->
-    <section class="set-card" id="sec-race">
-      <h2><span class="set-ic">🏁</span>プロキシレース <span class="set-hint-inline">L1 トンネル → L2 googlevideo → L3 発行実測の段階選抜を全員同時に実走</span></h2>
-      <div class="set-actions" style="margin-top:10px">
-        <label class="set-inline">台数
-          <select id="race-n"><option value="4">4</option><option value="6" selected>6</option><option value="8">8</option><option value="12">12</option></select>
-        </label>
-        <label class="set-inline">検証動画ID
-          <input id="race-v" class="set-input mono" placeholder="dQw4w9WgXcQ（既定）" maxlength="11" spellcheck="false">
-        </label>
-        <button class="set-btn primary" id="race-run">🏁 レース開始</button>
-        <span class="set-note">結果はライブログ(ch: race)にも超細かく流れます</span>
+    <section class="set-card">
+      <h2><span class="set-ic">ℹ️</span>Vandal について</h2>
+      <p class="set-about">Vandal — 最速の動画体験を目指す、完全に独立したオープンプロジェクト。インスタンス協力メッシュで、起動中の各サイトの URL と生きているプロキシをサーバー側で自動集計・共有します。</p>
+      <div class="set-actions">
+        <a class="set-btn" href="#/doc">詳細・ドキュメントを見る</a>
       </div>
-      <div id="race-result" class="race-result"></div>
-    </section>
-
-    <!-- ================= ストリーム取得テスト ================= -->
-    <section class="set-card" id="sec-stream">
-      <h2><span class="set-ic">🎬</span>ストリーム取得テスト <span class="set-hint-inline">発行 → 直結/ピン経由の初バイト → ホットキャッシュ載せまで実測</span></h2>
-      <div class="set-actions" style="margin-top:10px">
-        <input id="st-v" class="set-input mono" placeholder="動画ID (11文字)" maxlength="11" spellcheck="false">
-        <button class="set-btn primary" id="st-run">▶ テスト実行</button>
-      </div>
-      <div id="st-result"></div>
-    </section>
-
-    <!-- ================= メタ情報取得テスト ================= -->
-    <section class="set-card" id="sec-meta">
-      <h2><span class="set-ic">🧪</span>メタ情報取得テスト <span class="set-hint-inline">watchNext / コメント（トークン再利用 vs 2往復）/ 検索 の実測タイミング</span></h2>
-      <div class="set-actions" style="margin-top:10px">
-        <input id="mt-v" class="set-input mono" placeholder="動画ID (任意)" maxlength="11" spellcheck="false">
-        <input id="mt-q" class="set-input" placeholder="検索語 (任意)" maxlength="60" spellcheck="false">
-        <button class="set-btn primary" id="mt-run">▶ テスト実行</button>
-      </div>
-      <div id="mt-result"></div>
-    </section>
-
-    <!-- ================= ライブログ ================= -->
-    <section class="set-card" id="sec-logs">
-      <h2><span class="set-ic">📡</span>ライブログ（SSE 超精密ストリーム）
-        <span class="set-live" id="log-live">○</span>
-        <span class="set-note" id="log-stat"></span>
-      </h2>
-      <div class="set-actions" style="margin-top:10px">
-        <label class="set-inline">レベル
-          <select id="log-level">
-            <option value="trace" selected>trace（全部）</option>
-            <option value="debug">debug+</option>
-            <option value="info">info+</option>
-            <option value="warn">warn+</option>
-            <option value="error">errorのみ</option>
-          </select>
-        </label>
-        <label class="set-inline">チャンネル
-          <select id="log-ch">
-            <option value="">すべて</option>
-            ${['proxy', 'player', 'stream', 'comments', 'meta', 'http', 'race', 'streamtest', 'metatest', 'engine'].map(c => `<option value="${c}">${c}</option>`).join('')}
-          </select>
-        </label>
-        <button class="set-btn" id="log-pause">⏸ 一時停止</button>
-        <button class="set-btn" id="log-clear">🗑 クリア</button>
-      </div>
-      <div class="log-console" id="log-console"><div class="log-empty">— ログ待ち —（接続中）</div></div>
-    </section>
-
-    <!-- ================= その他 ================= -->
-    <section class="set-card" id="sec-about">
-      <h2><span class="set-ic">🖐️</span>その他</h2>
-      <div class="set-actions" style="margin-top:10px">
-        <button class="set-btn" id="about-theme">🌓 テーマ切り替え</button>
-        <button class="set-btn" id="about-clear-history">🧹 履歴を全消去</button>
-        <button class="set-btn" id="about-clear-cache">🧹 セッションキャッシュを消去</button>
-      </div>
-      <p class="set-about">Vandal — llytpr++ 直結エンジン搭載。<br>Made by Kakinie with llytpr-wl.v01nh TEAM. V1</p>
     </section>
   </div>`;
 
-  /* ------------------------------------------------ helpers */
-  const $$one = (sel) => $(sel, app);
-  const fmtMs = (ms) => (ms == null ? '—' : ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(2) + 's');
-  async function post(path, body) {
-    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
-    return res.json().catch(() => ({}));
-  }
-
-  /* ------------------------------------------------ engine config */
-  let cfg = null;
-  const segSet = (id, value) => {
-    $$(`#${id} button`, app).forEach(b => b.classList.toggle('sel', b.dataset.v === value));
-  };
-  const cfgDirtyUI = () => { $$one('#cfg-dirty').style.display = ''; };
-
-  function cfgFill(c) {
-    cfg = c;
-    segSet('cfg-proxyMode', c.proxyMode);
-    segSet('cfg-logLevel', c.logLevel);
-    $$one('#cfg-poolSize').value = c.poolSize; $$one('#cfg-poolSize-o').textContent = c.poolSize + ' 台';
-    $$one('#cfg-warmBytes').value = c.warmBytes; $$one('#cfg-warmBytes-o').textContent = c.warmBytes + ' KB';
-    $$one('#cfg-certify').checked = !!c.certify;
-    $$one('#cfg-commentsPrefetch').checked = !!c.commentsPrefetch;
-    $$one('#cfg-homeKeepWarm').checked = !!c.homeKeepWarm;
-    $$one('#cfg-dirty').style.display = 'none';
-  }
-
-  function cfgCollect() {
-    return {
-      proxyMode: $('#cfg-proxyMode .sel', app)?.dataset.v || 'auto',
-      logLevel: $('#cfg-logLevel .sel', app)?.dataset.v || 'trace',
-      poolSize: Number($$one('#cfg-poolSize').value) || 30,
-      warmBytes: Number($$one('#cfg-warmBytes').value) || 768,
-      certify: $$one('#cfg-certify').checked,
-      commentsPrefetch: $$one('#cfg-commentsPrefetch').checked,
-      homeKeepWarm: $$one('#cfg-homeKeepWarm').checked,
-    };
-  }
-
-  ['cfg-proxyMode', 'cfg-logLevel'].forEach(id => {
-    $$one('#' + id)?.addEventListener('click', (e) => {
-      const b = e.target.closest('button[data-v]');
-      if (!b) return;
-      segSet(id, b.dataset.v); cfgDirtyUI();
-    });
+  const seg = $('#cfg-theme');
+  const syncSeg = () => seg.querySelectorAll('button').forEach((b) =>
+    b.classList.toggle('sel', (b.dataset.v === 'dark') === document.documentElement.classList.contains('dark')));
+  syncSeg();
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-v]');
+    if (!b) return;
+    applyTheme(b.dataset.v === 'dark');
+    syncSeg();
   });
-  ['cfg-poolSize', 'cfg-warmBytes'].forEach(id => {
-    $$one('#' + id)?.addEventListener('input', (e) => {
-      const o = $$one('#' + id + '-o');
-      if (id === 'cfg-poolSize') o.textContent = e.target.value + ' 台';
-      else o.textContent = e.target.value + ' KB';
-      cfgDirtyUI();
-    });
-  });
-  ['cfg-certify', 'cfg-commentsPrefetch', 'cfg-homeKeepWarm'].forEach(id => {
-    $$one('#' + id)?.addEventListener('change', cfgDirtyUI);
-  });
-  $$one('#cfg-save')?.addEventListener('click', async () => {
-    const note = $$one('#cfg-note');
-    note.textContent = '適用中…';
+
+  $('#s-clear-history').addEventListener('click', () => { History.clear(); toast('履歴を消去しました'); });
+  $('#s-clear-cache').addEventListener('click', () => {
     try {
-      const res = await fetch('/api/diag/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfgCollect()) });
-      cfgFill(await res.json());
-      note.textContent = '✓ 適用しました（ライブログ ch:engine に反映記録が出ます）';
-      toast('エンジン設定を適用しました');
-    } catch (e) { note.textContent = '✗ ' + e.message; }
-  });
-  $$one('#cfg-reset-values')?.addEventListener('click', async () => {
-    const out = await post('/api/diag/config/reset');
-    cfgFill(out); toast('設定を初期値に戻しました');
-  });
-
-  /* ------------------------------------------------ state polling */
-  async function pollState() {
-    if (destroyed) return;
-    try {
-      const st = await api('/api/diag/state', { ttl: 0 });
-      if (destroyed || !st) return;
-      // summary
-      const up = st.uptime || 0;
-      $$one('#st-summary').innerHTML =
-        `<div><b>${(st.proxies?.pool || []).length}</b><span>プール</span></div>` +
-        `<div><b>${st.proxies?.issuers || 0}</b><span>L3発行可</span></div>` +
-        `<div><b>${st.proxies?.gvOk || 0}</b><span>L2中継可</span></div>` +
-        `<div><b>${Math.round((st.hot?.bytes || 0) / 1024)}KB</b><span>ホット</span></div>` +
-        `<div><b>${st.logbus?.rate || 0}/s</b><span>ログ速度</span></div>` +
-        `<div><b>${Math.floor(up / 60)}分</b><span>稼働</span></div>`;
-      // pool kv
-      const p = st.proxies || {};
-      $$one('#pool-kv').innerHTML = [
-        ['有効', p.enabled ? '✅ 有効' : '⛔ 無効 (direct)'],
-        ['プール', `${(p.pool || []).length} / 目標 ${p.poolTarget}`],
-        ['L3 発行可', `${p.issuers || 0} 台`],
-        ['L2 中継可', `${p.gvOk || 0} 台`],
-        ['水源リスト', `${(p.listSize || 0).toLocaleString()} 件（cursor ${p.cursor || 0}）`],
-        ['状態', [p.refreshing ? '更新中' : '', p.certifying ? '認定中' : ''].filter(Boolean).join(' + ') || '安定'],
-      ].map(([k, v]) => `<div class="kv"><span>${k}</span><b>${esc(v)}</b></div>`).join('');
-      // pool table
-      const tb = $('#pool-table tbody', app);
-      if (tb) {
-        const rows = (p.pool || []).slice(0, 40).map(pr => `
-          <tr>
-            <td class="mono">${esc(pr.url)}</td>
-            <td>${fmtMs(pr.latency)}</td>
-            <td>${pr.issuer ? '<i class="gr g3">L3 発行可</i>' : pr.gv ? '<i class="gr g2">L2 中継可</i>' : '<i class="gr g1">L1 トンネル</i>'}</td>
-            <td>${pr.fails ? '⚠︎' + pr.fails : '·'}</td>
-          </tr>`).join('');
-        tb.innerHTML = rows || '<tr><td colspan="4" class="dim">プールが空です — 「プールを強制更新」を実行してください</td></tr>';
-      }
-      // pool live dot
-      $$one('#pool-live').classList.toggle('on', !!(p.refreshing || p.certifying));
-      if (!cfg) cfgFill(st.config);
-    } catch (_) { /* transient */ }
-  }
-  timers.push(setInterval(pollState, 4000));
-  pollState();
-
-  $$one('#pool-refresh')?.addEventListener('click', async (e) => {
-    e.target.disabled = true; e.target.textContent = '💧 更新中…（最大数十秒）';
-    const r = await post('/api/proxies/refresh').catch(() => ({}));
-    e.target.disabled = false; e.target.textContent = '💧 プールを強制更新（全候補再スキャン）';
-    toast(`プール更新完了: ${r.pool ?? '?'} 台`);
-    pollState();
-  });
-  $$one('#pool-certify')?.addEventListener('click', async () => {
-    toast('L2/L3 認定を開始しました（ライブログ ch:proxy を見てください）');
-    await post('/api/diag/certify').catch(() => {});
-  });
-
-  /* ------------------------------------------------ proxy race */
-  $$one('#race-run')?.addEventListener('click', async (e) => {
-    const btn = e.target;
-    btn.disabled = true; btn.textContent = '🏁 レース中…（ライブログ ch:race に経過が流れます）';
-    $$one('#race-result').innerHTML = '<div class="mini-spin"></div>';
-    const v = $$one('#race-v').value.trim();
-    const r = await post('/api/diag/race', { n: Number($$one('#race-n').value) || 6, v: /^[\w-]{11}$/.test(v) ? v : undefined }).catch(err => ({ error: err.message }));
-    btn.disabled = false; btn.textContent = '🏁 レース開始';
-    if (destroyed) return;
-    if (r.error) { $$one('#race-result').innerHTML = `<div class="test-err">✗ ${esc(r.error)}</div>`; return; }
-    const rows = (r.results || []).map((x, i) => {
-      const grade = x.l3?.ok ? 'L3' : x.l2?.ok ? 'L2' : x.l1?.ok ? 'L1' : '✗';
-      return `<tr class="${r.winner?.url === x.url ? 'win' : ''}">
-        <td>${r.winner?.url === x.url ? '👑' : i + 1}</td>
-        <td class="mono">${esc(x.url)}</td>
-        <td>${fmtMs(x.l1?.ms)}</td>
-        <td>${x.l2 ? (x.l2.ok ? '✓ ' + fmtMs(x.l2.ms) : '✗') : '—'}</td>
-        <td>${x.l3 ? (x.l3.ok ? '✓ ' + fmtMs(x.l3.ms) : '✗ ' + esc(x.l3.playability || '')) : '—'}</td>
-        <td><i class="gr ${grade === 'L3' ? 'g3' : grade === 'L2' ? 'g2' : grade === 'L1' ? 'g1' : 'g0'}">${grade}</i></td>
-      </tr>`;
-    }).join('');
-    $$one('#race-result').innerHTML = `
-      <div class="race-win">${r.winner ? `🏆 勝者: <span class="mono">${esc(r.winner.url)}</span> — L1 ${fmtMs(r.winner.l1)}${r.winner.l2 != null ? ' / L2 ' + fmtMs(r.winner.l2) : ''}${r.winner.l3 != null ? ' / L3 ' + fmtMs(r.winner.l3) : ''}` : '勝者なし（全滅 — プール更新を推奨）'}</div>
-      <div class="pool-table-wrap"><table class="pool-table race">
-        <thead><tr><th>#</th><th>プロキシ</th><th>L1 トンネル</th><th>L2 googlevideo</th><th>L3 発行実測</th><th>等級</th></tr></thead>
-        <tbody>${rows}</tbody></table></div>
-      <p class="set-note">L1=YouTube への到達 / L2=googlevideo 中継可 / L3=player 発行が通る（= 動画URL発行に使える最高等級）</p>`;
-  });
-
-  /* ------------------------------------------------ stream test */
-  $$one('#st-run')?.addEventListener('click', async (e) => {
-    const btn = e.target;
-    const v = $$one('#st-v').value.trim();
-    if (!/^[\w-]{11}$/.test(v)) { toast('動画ID (11文字) を入力してください'); return; }
-    btn.disabled = true; btn.textContent = '▶ 実行中…（ch: streamtest / player に経過が流れます）';
-    $$one('#st-result').innerHTML = '<div class="mini-spin"></div>';
-    const r = await post('/api/diag/stream-test', { v }).catch(err => ({ error: err.message }));
-    btn.disabled = false; btn.textContent = '▶ テスト実行';
-    if (destroyed) return;
-    if (r.error && !r.steps?.length) { $$one('#st-result').innerHTML = `<div class="test-err">✗ ${esc(r.error)}</div>`; return; }
-    const labels = {
-      cacheCheck: 'キャッシュ確認', issuance: 'URL 発行（player）',
-      ttfbDirect: '初バイト・直結', ttfbPinned: '初バイト・ピン経由', hotCache: 'ホットキャッシュ',
-    };
-    $$one('#st-result').innerHTML = `
-      <div class="steps">${(r.steps || []).map(s => `
-        <div class="step">
-          <span class="step-name">${labels[s.name] || s.name}</span>
-          <span class="step-val">${s.name === 'issuance' ? (s.ok ? '✓ ' : '✗ ') : ''}${fmtMs(s.ms ?? null)}</span>
-          <span class="step-note">${esc(
-            s.name === 'cacheCheck' ? (s.hit ? 'キャッシュ済み（即応答可） source=' + (s.source || '') : '未キャッシュ（新規発行から計測）')
-            : s.name === 'issuance' ? (s.ok ? `経路: ${s.viaPin}` : '発行失敗')
-            : s.name === 'ttfbDirect' || s.name === 'ttfbPinned' ? (s.ok ? `HTTP ${s.status}` : '失敗')
-            : s.name === 'hotCache' ? (s.warmed ? `${(s.bytes / 1024) | 0}KB 載せ替え ✓` : '未載せ')
-            : '')}</span>
-        </div>`).join('')}</div>
-      ${r.error ? `<div class="test-err">途中でエラー: ${esc(r.error)}</div>` : ''}`;
-  });
-
-  /* ------------------------------------------------ meta test */
-  $$one('#mt-run')?.addEventListener('click', async (e) => {
-    const btn = e.target;
-    const v = $$one('#mt-v').value.trim();
-    const q = $$one('#mt-q').value.trim();
-    if (!v && !q) { toast('動画ID か 検索語 を入力してください'); return; }
-    btn.disabled = true; btn.textContent = '▶ 実行中…（ch: metatest / meta に経過が流れます）';
-    $$one('#mt-result').innerHTML = '<div class="mini-spin"></div>';
-    const r = await post('/api/diag/meta-test', { v, q }).catch(err => ({ error: err.message }));
-    btn.disabled = false; btn.textContent = '▶ テスト実行';
-    if (destroyed) return;
-    const t = r.tests || {};
-    const row = (label, o, note) => `<div class="step">
-        <span class="step-name">${label}</span>
-        <span class="step-val">${o?.ok === false ? '✗' : ''}${fmtMs(o?.ms ?? null)}</span>
-        <span class="step-note">${esc(note || '')}</span></div>`;
-    $$one('#mt-result').innerHTML = `
-      <div class="steps">
-        ${t.watchNext ? row('watchNext（動画メタ）', t.watchNext, `${t.watchNext.related || 0} 関連 / ${t.watchNext.hasCommentsToken ? 'コメントToken同梱 ✓' : 'Tokenなし'}${t.watchNext.title ? ' — ' + t.watchNext.title : ''}`) : ''}
-        ${t.commentsWithToken ? row('コメント（トークン再利用）', t.commentsWithToken, `${t.commentsWithToken.count || 0} 件 / ${t.commentsWithToken.count2 || ''}`) : ''}
-        ${t.commentsNoToken ? row('コメント（従来 2 往復）', t.commentsNoToken, `${t.commentsNoToken.count || 0} 件`) : ''}
-        ${t.commentsSpeedup ? `<div class="step speedup"><span class="step-name">コメント高速化効果</span><span class="step-val">${esc(t.commentsSpeedup)}</span></div>` : ''}
-        ${t.search ? row('search（検索）', t.search, `${t.search.items || 0} 件`) : ''}
-      </div>
-      ${r.error ? `<div class="test-err">途中でエラー: ${esc(r.error)}</div>` : ''}`;
-  });
-
-  /* ------------------------------------------------ SSE live logs */
-  const logConsole = () => $$one('#log-console');
-  const pushLog = (ev) => {
-    if (esPaused || destroyed) return;
-    const con = logConsole();
-    if (!con) return;
-    if (con.querySelector('.log-empty')) con.innerHTML = '';
-    const row = document.createElement('div');
-    row.className = 'log-row lv-' + ev.level;
-    const t = new Date(ev.ts);
-    const hh = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0');
-    let data = '';
-    if (ev.data && Object.keys(ev.data).length) {
-      data = ' ' + JSON.stringify(ev.data);
-      if (data.length > 320) data = data.slice(0, 320) + '…';
-    }
-    row.innerHTML = `<span class="log-t">${hh}</span><span class="log-lv">${ev.level}</span><span class="log-ch">${esc(ev.ch)}</span><span class="log-msg">${esc(ev.msg)}<span class="log-data">${esc(data)}</span></span>`;
-    const stick = con.scrollTop + con.clientHeight >= con.scrollHeight - 60;
-    con.appendChild(row);
-    logLines++;
-    while (logLines > 500 && con.firstElementChild) { con.removeChild(con.firstElementChild); logLines--; }
-    if (stick) con.scrollTop = con.scrollHeight;
-    $$one('#log-stat').textContent = `${logLines} 行`;
-  };
-
-  function connectLogs() {
-    if (destroyed) return;
-    es?.close();
-    const lv = $$one('#log-level').value;
-    const ch = $$one('#log-ch').value;
-    const url = `/api/diag/logs?sse=1&level=${encodeURIComponent(lv)}${ch ? '&ch=' + encodeURIComponent(ch) : ''}`;
-    es = new EventSource(url);
-    es.onopen = () => { if (destroyed) return; $$one('#log-live').classList.add('on'); $$one('#log-live').textContent = '●'; };
-    es.onerror = () => { if (destroyed) return; $$one('#log-live').classList.remove('on'); $$one('#log-live').textContent = '○'; };
-    es.onmessage = (m) => {
-      try { pushLog(JSON.parse(m.data)); } catch (_) { /* skip */ }
-    };
-    // ※ 過去バッファは SSE 接続時にサーバー側から同じフィルタで再生される
-    //    （二重取得不要）
-  }
-  $$one('#log-level')?.addEventListener('change', () => { logClear(); connectLogs(); });
-  $$one('#log-ch')?.addEventListener('change', () => { logClear(); connectLogs(); });
-  function logClear() {
-    const con = logConsole();
-    if (con) { con.innerHTML = '<div class="log-empty">— ログ待ち —</div>'; logLines = 0; }
-  }
-  $$one('#log-clear')?.addEventListener('click', logClear);
-  $$one('#log-pause')?.addEventListener('click', (e) => {
-    esPaused = !esPaused;
-    e.target.textContent = esPaused ? '▶ 再開' : '⏸ 一時停止';
-    e.target.classList.toggle('warn', esPaused);
-  });
-  connectLogs();
-
-  /* ------------------------------------------------ misc */
-  $$one('#about-theme')?.addEventListener('click', () => $('#theme-toggle')?.click());
-  $$one('#about-clear-history')?.addEventListener('click', () => {
-    History.clear(); toast('履歴を消去しました');
-  });
-  $$one('#about-clear-cache')?.addEventListener('click', () => {
-    try {
-      Object.keys(sessionStorage).filter(k => k.startsWith('llytpr:sc:')).forEach(k => sessionStorage.removeItem(k));
-      Object.keys(localStorage).filter(k => k.startsWith('llytpr:snap:')).forEach(k => localStorage.removeItem(k));
+      Object.keys(sessionStorage).filter(k => k.startsWith('vandal:sc:')).forEach(k => sessionStorage.removeItem(k));
+      Object.keys(localStorage).filter(k => k.startsWith('vandal:snap:')).forEach(k => localStorage.removeItem(k));
       toast('キャッシュを消去しました');
     } catch (_) { toast('消去に失敗しました'); }
   });
+  $('#s-clear-all').addEventListener('click', () => {
+    try {
+      Object.keys(localStorage).filter(k => k.startsWith('vandal')).forEach(k => localStorage.removeItem(k));
+      Object.keys(sessionStorage).filter(k => k.startsWith('vandal')).forEach(k => sessionStorage.removeItem(k));
+      toast('すべてのローカルデータを消去しました');
+      renderSettings();
+    } catch (_) { toast('消去に失敗しました'); }
+  });
 
-  return {
-    destroy() {
-      destroyed = true;
-      timers.forEach(clearInterval);
-      es?.close();
-    },
-  };
+  return { destroy() {} };
+}
+
+/* ========================================================== DOC (ドキュメント) */
+function renderDoc() {
+  setActiveNav('doc');
+
+  app.innerHTML = `
+  <div class="doc-page">
+    <div class="doc-hero">
+      <img src="/logo.svg" alt="Vandal" class="doc-logo">
+      <p class="doc-tag">最速の、自己完結型の動画体験。</p>
+    </div>
+
+    <div class="doc-grid">
+      <section class="doc-card">
+        <h2>🚀 Vandal とは</h2>
+        <p>Vandal は、動画を可能な限り高速に再生するための自己完結型フロントエンドです。InnerTube 直結エンジン、認定プロキシによるダイレクト再生、そしてインスタンス協力メッシュを備えています。</p>
+      </section>
+
+      <section class="doc-card">
+        <h2>🌐 インスタンス協力メッシュ</h2>
+        <p>複数の Vandal インスタンスが WebSocket で互いに接続し、起動中のサイトの URL と「生きているプロキシ」をサーバー側で自動集計・共有します。IP バンなどで再生しづらい環境でも、他の健全なインスタンスが検証したプロキシを借りて再生を継続できます。</p>
+        <pre class="doc-code"># 自インスタンスの公開 URL（これを設定すると他へ共有される）
+VANDAL_MESH_URL=https://vandal.example.com
+# 接続先ピア（カンマ区切り）
+VANDAL_MESH_PEERS=wss://peer1.example.com/.vandal-mesh,wss://peer2.example.com/.vandal-mesh</pre>
+        <p class="doc-note">未設定の場合も、単独のインスタンスとして従来どおり高速に動作します。</p>
+      </section>
+
+      <section class="doc-card">
+        <h2>📡 デプロイ</h2>
+        <p>Render / Railway / Docker / Cloudflare Workers / Vercel など、さまざまな環境へ展開できます。各デプロイボタンは README に掲載しています。</p>
+      </section>
+
+      <section class="doc-card doc-license">
+        <h2>⚖️ ライセンスと利用条件（絶対遵守）</h2>
+        <p>このプロジェクトをあなたの環境で自由に使用、デプロイ、または他者へ共有することを許可します。改変の禁止（絶対遵守）。</p>
+        <p><strong>本プロジェクトのソースコードや設計思想を保持するため、コードの改変は一切禁止とします。元の形を尊重し、配布・公開を行うよう強くお願いします。このプロジェクトを絶対に他プロジェクトのAPIや内部技術として利用しないでください。</strong></p>
+      </section>
+    </div>
+  </div>`;
+
+  return { destroy() {} };
 }

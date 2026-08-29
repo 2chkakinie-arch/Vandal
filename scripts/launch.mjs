@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * launch.mjs — Persimmon 統合ランチャー（Node バックエンド + Go エッジ）
+ * launch.mjs — Vandal 統合ランチャー（Node バックエンド + Go エッジ）
  *
  * 構成（Go 基盤の高速化レイヤー）:
  *
- *      internet ─▶ persimmon-edge (Go)        ← $PORT を listen（既定 3000）
+ *      internet ─▶ vandal-edge (Go)        ← $PORT を listen（既定 3000）
  *                     │ 静的アセットをメモリから即配信（gzip 事前圧縮済み）
  *                     │ /api/stream ピン済み → googlevideo 直中継（Node ホップ無し）
  *                     └─▶ node index.js       ← 127.0.0.1:$INTERNAL_PORT（既定 3101）
@@ -18,13 +18,13 @@
  *   2. エッジが連続して落ちた（3回）→ バックエンドを公開ポートで上げ直し Node 単体へ移行
  *   3. バックエンドが落ちた → プロセスごと終了（プラットフォームの再起動ポリシーに委ねる。
  *      これは従来の npm start 時のクラッシュ挙動と同一）
- *   4. PERSIMMON_EDGE=0 で初めから Node 単体モードにできる
+ *   4. VANDAL_EDGE=0 で初めから Node 単体モードにできる
  *
  * 環境変数:
  *   PORT               公開ポート（既定 3000）
  *   INTERNAL_PORT      Node バックエンドのローカルポート（既定 3101）
- *   PERSIMMON_EDGE_BIN エッジバイナリのパス上書き
- *   PERSIMMON_EDGE=0   エッジを無効化（従来構成で起動）
+ *   VANDAL_EDGE_BIN エッジバイナリのパス上書き
+ *   VANDAL_EDGE=0   エッジを無効化（従来構成で起動）
  */
 import { spawn, spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -43,7 +43,7 @@ if (CORE_PORT === PUBLIC_PORT || CORE_PORT === INTERNAL_PORT) {
   if (CORE_PORT === PUBLIC_PORT) CORE_PORT = INTERNAL_PORT + 2;
 }
 const CORE_TOKEN = process.env.CORE_TOKEN || crypto.randomBytes(16).toString('hex');
-const EDGE_DISABLED = process.env.PERSIMMON_EDGE === '0';
+const EDGE_DISABLED = process.env.VANDAL_EDGE === '0';
 const NODE_BIN = process.execPath;
 
 const log = (...a) => console.log('[launch]', ...a);
@@ -53,7 +53,7 @@ const warn = (...a) => console.warn('[launch]', ...a);
 function startBackend(port, host, label, extraEnv = {}) {
   const child = spawn(NODE_BIN, [path.join(ROOT, 'index.js')], {
     stdio: 'inherit',
-    env: { ...process.env, PORT: String(port), HOST: host, PERSIMMON_MODE: label, ...extraEnv },
+    env: { ...process.env, PORT: String(port), HOST: host, VANDAL_MODE: label, ...extraEnv },
   });
   child.on('error', (e) => warn(`バックエンド起動失敗 (${label}):`, e.message));
   return child;
@@ -61,8 +61,8 @@ function startBackend(port, host, label, extraEnv = {}) {
 
 function findEdgeBinary() {
   const candidates = [];
-  if (process.env.PERSIMMON_EDGE_BIN) candidates.push(process.env.PERSIMMON_EDGE_BIN);
-  const name = process.platform === 'win32' ? 'persimmon-edge.exe' : 'persimmon-edge';
+  if (process.env.VANDAL_EDGE_BIN) candidates.push(process.env.VANDAL_EDGE_BIN);
+  const name = process.platform === 'win32' ? 'vandal-edge.exe' : 'vandal-edge';
   candidates.push(path.join(ROOT, 'goedge', 'bin', name));
   for (const p of candidates) {
     try {
@@ -77,7 +77,7 @@ function findEdgeBinary() {
 function tryBuildEdge() {
   const go = spawnSync('go', ['version'], { encoding: 'utf8' });
   if (go.error || go.status !== 0) return null;
-  const name = process.platform === 'win32' ? 'persimmon-edge.exe' : 'persimmon-edge';
+  const name = process.platform === 'win32' ? 'vandal-edge.exe' : 'vandal-edge';
   const out = path.join(ROOT, 'goedge', 'bin', name);
   fs.mkdirSync(path.dirname(out), { recursive: true });
   log('Go 検出 — エッジをビルドします（初回のみ数秒）…');
@@ -97,7 +97,7 @@ function tryBuildEdge() {
 /* ------------------------------------------------------------ legacy mode */
 
 if (EDGE_DISABLED) {
-  log('PERSIMMON_EDGE=0 — Node 単体モードで起動');
+  log('VANDAL_EDGE=0 — Node 単体モードで起動');
   const child = startBackend(PUBLIC_PORT, '0.0.0.0', 'legacy');
   child.on('exit', (code, sig) => process.exit(sig ? 0 : (code ?? 1)));
   forwardSignals([child]);

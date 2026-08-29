@@ -64,7 +64,7 @@ class GoCore {
     const t = setTimeout(() => ac.abort(), timeoutMs);
     try {
       const headers = { 'Accept': 'application/json' };
-      if (this.token) headers['X-Persimmon-Core'] = this.token;
+      if (this.token) headers['X-Vandal-Core'] = this.token;
       let payload;
       if (body != null && method !== 'GET') {
         headers['Content-Type'] = 'application/json';
@@ -188,7 +188,7 @@ class GoCore {
       const ac = new AbortController();
       const t = setTimeout(() => ac.abort(), 800);
       const headers = {};
-      if (this.token) headers['X-Persimmon-Core'] = this.token;
+      if (this.token) headers['X-Vandal-Core'] = this.token;
       await undiciRequest(this.origin + '/v1/pin?v=' + encodeURIComponent(videoId), {
         method: 'DELETE', headers, signal: ac.signal, headersTimeout: 800, bodyTimeout: 800,
       }).then((u) => u.body.dump?.().catch(() => {})).catch(() => {});

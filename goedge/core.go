@@ -596,7 +596,7 @@ func newCoreHandler(cfg *config, pins *pinStore, pool *clientPool, stats *coreSt
 	auth := func(next http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			if cfg != nil && cfg.coreToken != "" {
-				if r.Header.Get("X-Persimmon-Core") != cfg.coreToken {
+				if r.Header.Get("X-Vandal-Core") != cfg.coreToken {
 					http.Error(w, `{"error":"forbidden","code":"CORE_AUTH"}`, http.StatusForbidden)
 					return
 				}

@@ -7,10 +7,14 @@ const { logbus } = require('../logbus');
 const { engineConfig } = require('../config');
 const it = require('../innertube');
 const { gocore } = require('../gocore');
+const { mesh } = require('../mesh');
 
 const router = express.Router();
 
-router.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now(), proxies: proxyManager.pool.length, core: gocore.status() }));
+router.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now(), proxies: proxyManager.pool.length, core: gocore.status(), mesh: mesh.isActive }));
+
+// インスタンス協力メッシュの集計状況（公開 URL / 共有プロキシ）。
+router.get('/api/mesh/state', (req, res) => res.json(mesh.state()));
 router.get('/api/proxies', (req, res) => res.json(proxyManager.status()));
 router.post('/api/proxies/refresh', wrap(async (req, res) => {
   const pool = await proxyManager.refresh({ force: true });

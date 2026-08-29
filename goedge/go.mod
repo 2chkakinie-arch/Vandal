@@ -1,3 +1,3 @@
-module persimmon-edge
+module vandal-edge
 
 go 1.20

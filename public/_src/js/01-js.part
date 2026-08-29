@@ -132,7 +132,7 @@ function channelRow(it) {
 }
 
 /** shorts playback queue — ショートカード群から文脈ごと保存（下スクロール遷移の土台） */
-const SHQ_KEY = 'llytpr:shq';
+const SHQ_KEY = 'vandal:shq';
 function shqLoad() {
   try {
     const j = JSON.parse(sessionStorage.getItem(SHQ_KEY) || 'null');

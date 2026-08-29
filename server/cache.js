@@ -1,7 +1,7 @@
 'use strict';
 /**
  * Tiny dependency-free TTL + LRU cache.
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 class TTLCache {
   constructor({ max = 1000, ttl = 5 * 60 * 1000 } = {}) {

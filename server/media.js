@@ -1,6 +1,6 @@
 'use strict';
 /**
- * HotChunks — "instant first frame" media warmer for llytpr-wl.v01nh.
+ * HotChunks — "instant first frame" media warmer for Vandal.
  *
  * The 360p progressive start path is optimized to the limit:
  *  - As soon as the server knows a video's stream map (watch API hit or card
@@ -14,7 +14,7 @@
  *
  * No external APIs are involved — this is pure transport/cache engineering.
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 const { request: undiciRequest } = require('undici');
 const { proxyManager } = require('./proxies');

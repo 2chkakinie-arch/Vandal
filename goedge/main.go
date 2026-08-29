@@ -1,7 +1,7 @@
-// Command persimmon-edge — Go accelerator front for the Persimmon (Vandal) Node backend.
+// Command vandal-edge — Go accelerator front for the Vandal Node backend.
 //
 // 役割（Go 基盤による高速化レイヤー）:
-//   - SPA シェルの静的アセット（/index.html, /app.js, /styles.css, /logo.png,
+//   - SPA シェルの静的アセット（/index.html, /app.js, /styles.css, /logo.svg,
 //     /vendor/hls.min.js）を起動時に Node バックエンドから 1 回だけ取り込み、
 //     メモリ上に「生バイト + gzip 事前圧縮バイト」の両方を保持して即座に配信する
 //     （リクエストごとの fs stat / gzip 圧縮 CPU を完全に無くす）。
@@ -50,7 +50,7 @@ type config struct {
 	verbose      bool
 	coreBind     string // fetch-core バインド（既定 127.0.0.1 — 公開しない）
 	corePort     int    // fetch-core ポート（CORE_PORT、0=無効）
-	coreToken    string // 任意の共有秘密（X-Persimmon-Core）
+	coreToken    string // 任意の共有秘密（X-Vandal-Core）
 }
 
 func envInt(name string, def, min, max int) int {
@@ -105,6 +105,7 @@ var assetPaths = []string{
 	"/index.html",
 	"/app.js",
 	"/styles.css",
+	"/logo.svg",
 	"/logo.png",
 	"/vendor/hls.min.js",
 }
@@ -373,7 +374,7 @@ func newOriginProxy(cfg *config) *httputil.ReverseProxy {
 		b := make([]byte, 32*1024)
 		return &b
 	}}}
-	// SSE（/api/diag/logs）と動画リレー（/api/stream）をバッファせず即時フラッシュ
+	// 動画リレー（/api/stream）をバッファせず即時フラッシュ
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		if cfg.verbose {
@@ -460,7 +461,7 @@ func (m *originMonitor) status() (bool, time.Duration) {
 func main() {
 	cfg := loadConfig()
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
-	log.Printf("[edge] Persimmon Go edge 起動中… listen=%s:%d origin=%s", cfg.bind, cfg.port, cfg.origin)
+	log.Printf("[edge] Vandal Go edge 起動中… listen=%s:%d origin=%s", cfg.bind, cfg.port, cfg.origin)
 
 	store := newAssetStore()
 	puller := newPuller(cfg, store)

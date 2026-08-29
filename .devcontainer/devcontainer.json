@@ -1,5 +1,5 @@
 {
-  "name": "Persimmon (Go edge + Node)",
+  "name": "Vandal (Go edge + Node)",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
   "features": {
     "ghcr.io/devcontainers/features/go:1": {
@@ -9,7 +9,7 @@
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
-      "label": "Persimmon"
+      "label": "Vandal"
     }
   },
   "postCreateCommand": "npm install"

@@ -1,5 +1,5 @@
 'use strict';
-/** HTTP ルートの組み立て — llytpr-wl.v01nh. */
+/** HTTP ルートの組み立て — Vandal. */
 const express = require('express');
 
 const router = express.Router();

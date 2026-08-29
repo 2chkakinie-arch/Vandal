@@ -1,14 +1,14 @@
-# Cloudflare Workers — Persimmon エッジキャッシュ層
+# Cloudflare Workers — Vandal エッジキャッシュ層
 # 使い方:
 #   1. [vars] の ORIGIN を自分のオリジン（Render / Railway など）に変更
 #   2. npm i -D wrangler または npx wrangler login
 #   3. npx wrangler deploy
 # 詳細: cloudflare/README.md
-name = "persimmon-edge"
+name = "vandal-edge"
 main = "cloudflare/worker.js"
 compatibility_date = "2025-01-01"
 workers_dev = true
 
 [vars]
-# オリジン（実際に Persimmon が動いている URL）に変更してください
-ORIGIN = "https://test-v1-llytpr.vercel.app/"
+# オリジン（実際に Vandal が動いている URL）に変更してください
+ORIGIN = "https://test-v1-vandal.vercel.app/"

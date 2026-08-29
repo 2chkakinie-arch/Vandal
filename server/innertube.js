@@ -1,13 +1,13 @@
 'use strict';
 /**
- * InnerTube engine for llytpr-wl.v01nh.
+ * InnerTube engine for Vandal.
  * Raw youtubei/v1 client with rotating free-proxy transport, visitor-data
  * handling, cipher repair via the vendored yt-dlp solver, and tolerant parsers
  * for every surface the app needs (search / watch / comments / channel /
  * playlist / home). Every response shape is probed, not assumed — YouTube
  * changes payload layouts constantly.
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 const { proxyManager } = require('./proxies');
 const { sigSolver } = require('./solver');
@@ -31,7 +31,7 @@ const { throwIfHedgeDefinitive } = require('./hedge');
  * Vercel コールドブートでも「初回だけ遅い」を消す。期限切れは読み出し時に捨てる。 */
 const fs = require('node:fs');
 const nodePath = require('node:path');
-const RT_DIR = process.env.VERCEL ? '/tmp/llytpr-data' : nodePath.join(__dirname, '..', 'data');
+const RT_DIR = process.env.VERCEL ? '/tmp/vandal-data' : nodePath.join(__dirname, '..', 'data');
 const RT_FILE = nodePath.join(RT_DIR, 'runtime-cache.json');
 const rt = { goodCombo: null, streams: {}, home: {} }; // streams['m:'+id]={e,exp} / ['p:'+id]={e,exp}
 try { fs.mkdirSync(RT_DIR, { recursive: true }); } catch (_) { /* noop */ }
@@ -734,7 +734,7 @@ async function getVideoFullUncached(videoId, opts = {}) {
     }
   }
 
-  // ---- llytpr++ 直結判定は応答を待たせない（初速高速化の要）:
+  // ---- Vandal 直結判定は応答を待たせない（初速高速化の要）:
   // かつては Range 実測（プロキシ経由で最大 9 秒）とピン修復の完了を await して
   // から watch 応答を返しており、コールド視聴が最悪数秒遅かった。
   // 新方式:
@@ -787,7 +787,7 @@ async function getVideoFullUncached(videoId, opts = {}) {
       hls: p.hls,
       direct,
       source: p.source || 'innertube',
-      // llytpr++ 直結エンジン: 生 URL は常時一式返す（可否はクライアントの影武者
+      // Vandal 直結エンジン: 生 URL は常時一式返す（可否はクライアントの影武者
       // プローブ＋サーバー裏実測の両輪で判定）。MSE は CORS の都合で従来どおりリレー。
       // playDirect/hdDirect は true（実測済）/false（実測失敗）/null（未検証）。
       playDirect: pd ? !!pd.playDirect : null,

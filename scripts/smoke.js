@@ -1,13 +1,13 @@
 'use strict';
 /**
- * Local smoke test for llytpr-wl.v01nh — no external network required.
+ * Local smoke test for Vandal — no external network required.
  * Boots the express app on an ephemeral port and verifies the HTTP surface,
  * plus a focused unit test of the HotChunks full-file RAM serve path.
  *
  * Run: npm run test:api
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
-process.env.LLYTPR_NO_PROXY = '1'; // smoke は外部プロキシを触らない
+process.env.VANDAL_NO_PROXY = '1'; // smoke は外部プロキシを触らない
 
 const http = require('node:http');
 const assert = require('node:assert');

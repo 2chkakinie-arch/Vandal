@@ -1,15 +1,14 @@
 'use strict';/**
- * LogBus — 超高精細ログ基盤（SSE 配信対応）。
+ * LogBus — サーバー内イベントログ基盤。
  *
  * サーバー内のあらゆる経路（プロキシ認定 / InnerTube 発行 / ストリーム中継 /
- * コメント取得 / 直結判定 …）をイベント化し:
- *   - リングバッファ（直近 N 件）に保持 → /api/diag/logs?since= で polynomial 取得
- *   - SSE 購読者へ即時 push（/api/diag/logs?sse=1）→ 設定ページで超細かく閲覧
+ * コメント取得 / 直結判定 / メッシュ …）をイベント化し、リングバッファ
+ * （直近 N 件）に保持します。SSE 購読（subscribe）も提供。
  *
- * ログは channel(ch) で分類: proxy / player / stream / comments / meta / race /
- * streamtest / metatest / engine / http。level: trace < debug < info < warn < error。
+ * ログは channel(ch) で分類: proxy / player / stream / comments / meta / mesh /
+ * engine / http。level: trace < debug < info < warn < error。
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 
 const LEVELS = { trace: 10, debug: 20, info: 30, warn: 40, error: 50 };

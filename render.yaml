@@ -4,7 +4,7 @@ version: 1
 #   startCommand: npm start のままでも完全に動作します。詳しくは README。）
 services:
   - type: web
-    name: persimmon
+    name: vandal
     env: docker
     plan: free
     dockerfilePath: ./Dockerfile

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * ProxyManager V5 — llytpr++ 直結発行基盤。
+ * ProxyManager V5 — Vandal 直結発行基盤。
  *
  * 「プロキシを使って googlevideo 生ストリームURLを"発行"し、プロキシを通さず
  *  再生できる生URLを得る」ための品質保証レイヤー。メディア本体は絶対に
@@ -22,7 +22,7 @@
  *
  * 結果はディスク永続化し、Vercel コールドブートでも即応答。
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -37,7 +37,7 @@ const LIST_URLS = [
   'https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt',
   'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt',
 ];
-const DATA_DIR = process.env.VERCEL ? '/tmp/llytpr-data' : path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.VERCEL ? '/tmp/vandal-data' : path.join(__dirname, '..', 'data');
 const CACHE_FILE = path.join(DATA_DIR, 'proxy-cache.json');
 
 const TEST_TARGET = 'https://www.youtube.com/generate_204';
@@ -80,7 +80,7 @@ class ProxyManager {
     this.certifying = null;
     this.lastRefresh = 0;
     this.lastCertify = 0;
-    this.enabled = process.env.LLYTPR_NO_PROXY !== '1';
+    this.enabled = process.env.VANDAL_NO_PROXY !== '1';
     try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) { /* read-only fs */ }
     this._loadDisk();
     if (this.enabled) {
@@ -423,6 +423,82 @@ class ProxyManager {
     p.fails = 0;
     p.lastOk = Date.now();
     if (latency) p.latency = Math.round(p.latency * 0.7 + latency * 0.3);
+  }
+
+  /**
+   * インスタンス協力メッシュ用: 自インスタンスが持つ「生きている」プロキシを
+   * 他インスタンスへ共有する形に整えて返す（URL と実測メタのみ。資格情報は無い）。
+   * issuer/gv 認定済みを優先し、遅延順に最大 N 件。
+   */
+  exportProxies(limit = 40) {
+    const now = Date.now();
+    const live = this.pool
+      .filter(p => p.lastOk && now - p.lastOk < 10 * 60 * 1000)
+      .map(p => ({
+        url: p.url,
+        latency: p.latency,
+        issuer: !!(p.issuerTs && now - p.issuerTs < CERT_TTL),
+        gv: !!(p.gvOkTs && now - p.gvOkTs < CERT_TTL),
+      }))
+      .sort((a, b) => (b.issuer - a.issuer) || (b.gv - a.gv) || (a.latency - b.latency));
+    return live.slice(0, limit);
+  }
+
+  /**
+   * インスタンス協力メッシュ用: ピアから受信したプロキシをプールへ取り込む。
+   *  - issuer/gv 認定済み（ピアが実測済み）は信頼して即採用
+   *  - それ以外は軽い実測（_testOne）に通ったものだけ採用（毒入れ対策）
+   *  - 上限・重複排除でメモリ/攻撃面を守る
+   */
+  async adoptProxies(list = []) {
+    if (!this.enabled || !Array.isArray(list) || !list.length) return 0;
+    const known = new Set(this.pool.map(p => p.url));
+    const incoming = [];
+    for (const p of list) {
+      if (!p || typeof p.url !== 'string') continue;
+      const url = p.url;
+      if (known.has(url)) continue;
+      if (!/^https?:\/\/\d{1,3}(\.\d{1,3}){3}:\d{2,5}$/.test(url)) continue;
+      known.add(url);
+      incoming.push(p);
+    }
+    if (!incoming.length) return 0;
+
+    const certed = incoming.filter(p => p.issuer || p.gv);
+    const rest = incoming.filter(p => !(p.issuer || p.gv));
+
+    let added = 0;
+    // 認定済みは即採用（ピア実測を信頼。過剰分は切り捨て）
+    for (const p of certed.slice(0, 120)) {
+      this.pool.push({
+        url: p.url,
+        latency: Math.min(Math.max(Number(p.latency) || 1500, 50), 10000),
+        fails: 0,
+        lastOk: Date.now(),
+        gvOkTs: p.gv ? Date.now() : 0,
+        issuerTs: p.issuer ? Date.now() : 0,
+      });
+      added++;
+    }
+    // 非認定は軽実測（並列幅は控えめ。メッシュ帯域を守る）
+    const unver = rest.slice(0, 60);
+    for (let i = 0; i < unver.length; i += 4) {
+      const chunk = unver.slice(i, i + 4);
+      const res = await Promise.all(chunk.map(p => this._testOne(p.url).catch(() => null)));
+      res.forEach((r) => {
+        if (!r) return;
+        if (this.pool.some(x => x.url === r.url)) return;
+        this.pool.push(r);
+        added++;
+      });
+    }
+    if (added) {
+      this.pool = [...new Map(this.pool.map(p => [p.url, p])).values()]
+        .sort((a, b) => a.latency - b.latency);
+      this._saveDisk();
+      logbus.info('mesh', 'ピアからプロキシを採用', { added, total: this.pool.length });
+    }
+    return added;
   }
 
   status() {

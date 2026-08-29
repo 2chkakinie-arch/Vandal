@@ -1,4 +1,4 @@
-// persimmon-edge のユニットテスト — httptest バックエンドを立て、
+// vandal-edge のユニットテスト — httptest バックエンドを立て、
 // ①アセット取り込み+メモリ配信 ②gzip 事前圧縮 ③条件付きリクエスト(304)
 // ④プロキシ素通し（POST/不明パス/Range）⑤SSE 即時フラッシュ を検証する。
 package main
@@ -20,7 +20,7 @@ import (
 // newTestEdge は httptest オリジン + puller/monitor を組み立てる。
 func newTestEdge(t *testing.T) (*httptest.Server, *config, *assetStore, *puller) {
 	t.Helper()
-	appJS := strings.Repeat("console.log('persimmon');", 2000) // 圧縮しがいのある大きめの本文
+	appJS := strings.Repeat("console.log('vandal');", 2000) // 圧縮しがいのある大きめの本文
 	css := strings.Repeat("body { color: #f60; }", 1000)
 	html := "<!doctype html><title>Vandal</title>" + strings.Repeat("<div></div>", 200)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,7 +40,7 @@ func newTestEdge(t *testing.T) (*httptest.Server, *config, *assetStore, *puller)
 			w.Header().Set("Content-Type", "text/css; charset=utf-8")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			io.WriteString(w, css)
-		case "/logo.png", "/vendor/hls.min.js":
+		case "/logo.png", "/logo.svg", "/vendor/hls.min.js":
 			w.Header().Set("Content-Type", "application/octet-stream")
 			io.WriteString(w, "binary-bytes")
 		case "/echo-method":
