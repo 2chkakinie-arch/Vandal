@@ -15,7 +15,7 @@
  *
  * Run: npm run test:core
  */
-process.env.LLYTPR_NO_PROXY = '1';
+process.env.VANDAL_NO_PROXY = '1';
 delete process.env.CORE_ORIGIN;
 
 const http = require('node:http');
@@ -141,16 +141,17 @@ async function main() {
   check('GET /api/health still 200 ok', health.status === 200 && hj.ok === true);
   check('/api/health exposes core status', hj.core && hj.core.ready === false && hj.core.origin === null);
 
-  const diag = await new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port, path: '/api/diag/state' }, (res) => {
+  // メッシュ集計状態（インスタンス協力）が公開されているか
+  const mesh = await new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: '/api/mesh/state' }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(chunks).toString() }));
     }).on('error', reject);
   });
-  let dj = {};
-  try { dj = JSON.parse(diag.body); } catch (_) { /* noop */ }
-  check('GET /api/diag/state includes core', diag.status === 200 && dj.core && typeof dj.core.ready === 'boolean');
+  let mj = {};
+  try { mj = JSON.parse(mesh.body); } catch (_) { /* noop */ }
+  check('GET /api/mesh/state is 200 with peers', mesh.status === 200 && mj && typeof mj.count === 'number' && Array.isArray(mj.peers));
 
   server.close();
   upstream.close();

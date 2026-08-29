@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Client source distributor — llytpr-wl.v01nh.
+ * Client source distributor — Vandal.
  * `public/_src/{js,css}` に分散された部品をマニフェスト順に連結し、
  * 単一バンドル（/app.js, /styles.css）として配信する。
  * ソースは多数のファイルへ分散（読みにくさ・模倣しにくさ）させつつ、

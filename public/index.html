@@ -4,19 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0f0f0f">
-<meta name="description" content="Vandal — the fastest video experience. Powered by llytpr++ direct-play engine.">
-<meta name="generator" content="llytpr++ direct-play engine (llytpr-wl.v01nh) — Vandal">
+<meta name="description" content="Vandal — the fastest, self-contained video experience. Direct-play engine + instance cooperation mesh.">
+<meta name="generator" content="Vandal direct-play engine">
 <link rel="preconnect" href="https://i.ytimg.com" crossorigin>
 <link rel="dns-prefetch" href="https://i.ytimg.com">
 <link rel="preconnect" href="https://yt3.ggpht.com" crossorigin>
 <link rel="dns-prefetch" href="https://yt3.ggpht.com">
 <title>Vandal</title>
-<link rel="icon" href="/logo.png" type="image/png">
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/styles.css">
 <script>
 (function () {
   try {
-    var saved = localStorage.getItem('llytpr-theme');
+    var saved = localStorage.getItem('vandal-theme');
     var dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
     if (dark) document.documentElement.classList.add('dark');
   } catch (_) {}
@@ -30,7 +30,7 @@
       <svg viewBox="0 0 24 24" class="ic"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></svg>
     </button>
     <a class="logo" href="#/" aria-label="Vandal ホーム">
-      <img src="/logo.png" alt="Vandal" class="logo-img">
+      <img src="/logo.svg" alt="Vandal" class="logo-img">
     </a>
   </div>
   <div class="mh-center">
@@ -52,7 +52,7 @@
       <svg viewBox="0 0 24 24" class="ic theme-ic-moon"><path d="M12 22a10 10 0 0 1-6.9-17 10 10 0 1 0 14 15.6A10 10 0 0 1 12 22z"/></svg>
       <svg viewBox="0 0 24 24" class="ic theme-ic-sun"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-6h0M11 1h2v3h-2zm0 19h2v3h-2zM1 11h3v2H1zm19 0h3v2h-3zM4.2 4.2l1.4 1.4-1.4 1.4L2.8 5.6zm14.2 14.2 1.4 1.4-1.4 1.4-1.4-1.4zM4.2 19.8l1.4-1.4 1.4 1.4-1.4 1.4zM18.4 5.6l1.4-1.4 1.4 1.4-1.4 1.4z"/></svg>
     </button>
-    <a id="settings-btn" class="icon-btn" href="#/settings" aria-label="設定" title="設定・診断">
+    <a id="settings-btn" class="icon-btn" href="#/settings" aria-label="設定" title="設定">
       <svg viewBox="0 0 24 24" class="ic"><path d="M12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5zm7.4-2.6c.04-.3.07-.63.07-.95s-.02-.64-.08-.94l2.1-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.3 7.3 0 0 0-1.63-.95l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.59.24-1.13.56-1.63.95l-2.48-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.1 1.65c-.06.3-.08.62-.08.94s.02.64.08.94l-2.1 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.31.6.22l2.49-1c.5.38 1.04.7 1.63.94l.38 2.66a.5.5 0 0 0 .5.41h4a.5.5 0 0 0 .5-.42l.38-2.65c.59-.24 1.13-.56 1.63-.95l2.48 1a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64z"/></svg>
     </a>
   </div>
@@ -80,11 +80,15 @@
     <div class="guide-sep"></div>
     <a class="guide-item" href="#/settings" data-nav="settings">
       <svg viewBox="0 0 24 24" class="ic"><path d="M12 15.5A3.5 3.5 0 1 1 15.5 12 3.5 3.5 0 0 1 12 15.5zm7.4-2.6c.04-.3.07-.63.07-.95s-.02-.64-.08-.94l2.1-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.3 7.3 0 0 0-1.63-.95l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.59.24-1.13.56-1.63.95l-2.48-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.1 1.65c-.06.3-.08.62-.08.94s.02.64.08.94l-2.1 1.65a.5.5 0 0 0-.12.64l2 3.46c.13.22.39.31.6.22l2.49-1c.5.38 1.04.7 1.63.94l.38 2.66a.5.5 0 0 0 .5.41h4a.5.5 0 0 0 .5-.42l.38-2.65c.59-.24 1.13-.56 1.63-.95l2.48 1a.5.5 0 0 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64z"/></svg>
-      <span>設定・診断</span>
+      <span>設定</span>
+    </a>
+    <a class="guide-item" href="#/doc" data-nav="doc">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2h5v5h5v11H6zm7 1.5V5.5l3 3h-3z"/></svg>
+      <span>ドキュメント</span>
     </a>
     </div>
     <div class="guide-foot">
-      <div class="foot-credit">Made by Kakinie<br>with llytpr-wl.v01nh TEAM. V1</div>
+      <div class="foot-credit">Vandal Project<br>独立したオープンプロジェクト</div>
     </div>
   </nav>
   <div id="nav-backdrop" aria-hidden="true"></div>

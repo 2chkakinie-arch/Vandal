@@ -1,10 +1,10 @@
 /**
- * Persimmon — Cloudflare エッジ Worker
+ * Vandal — Cloudflare エッジ Worker
  *
  * Cloudflare の世界中の PoP から SPA シェル（index.html / app.js / styles.css /
  * 画像など）を**キャッシュ付きで**配信し、初期表示を大幅に速くする。
  * /api/*（動画リレー・SSE・InnerTube）は一切キャッシュせず、オリジン
- * （Render / Railway 等で動く Persimmon サーバー）へストリーミング転送する。
+ * （Render / Railway 等で動く Vandal サーバー）へストリーミング転送する。
  *
  * 設定: wrangler.toml の [vars] ORIGIN を自分のオリジン URL に変更してデプロイ。
  *       npx wrangler deploy
@@ -18,7 +18,7 @@ export default {
     const origin = (env.ORIGIN || '').replace(/\/+$/, '');
     if (!origin) {
       return new Response(
-        'Persimmon edge: ORIGIN が未設定です。wrangler.toml の [vars] ORIGIN を設定してください。',
+        'Vandal edge: ORIGIN が未設定です。wrangler.toml の [vars] ORIGIN を設定してください。',
         { status: 500 },
       );
     }
@@ -41,7 +41,7 @@ export default {
         const hit = await cache.match(cacheKey);
         if (hit) {
           const res = new Response(hit.body, hit);
-          res.headers.set('x-persimmon-cf', 'HIT');
+          res.headers.set('x-vandal-cf', 'HIT');
           return res;
         }
       } catch { /* キャッシュ不能でも転送は続行 */ }
@@ -66,7 +66,7 @@ export default {
         const headers = new Headers(res.headers);
         // エッジでは少しだけ長く保持（ブラウザ向け max-age は維持）
         headers.set('cache-control', cc.replace(/max-age=\d+/i, `max-age=${m[1]}, s-maxage=${Math.max(Number(m[1]), 3600)}`));
-        headers.set('x-persimmon-cf', 'MISS');
+        headers.set('x-vandal-cf', 'MISS');
         if (cache) {
           try {
             // 配信を待たせないようバックグラウンドで保存
@@ -79,7 +79,7 @@ export default {
     }
 
     const passthrough = new Response(res.body, res);
-    passthrough.headers.set('x-persimmon-cf', isApi ? 'API' : 'PASS');
+    passthrough.headers.set('x-vandal-cf', isApi ? 'API' : 'PASS');
     return passthrough;
   },
 };

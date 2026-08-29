@@ -1,11 +1,11 @@
 {
-  "name": "llytpr-wl-v01nh",
+  "name": "vandal",
   "version": "1.0.0",
-  "description": "Vandal (llytpr-wl.v01nh) — ultra-fast YouTube frontend (InnerTube + issuer-certified proxy direct-play + ♦Ask AI). Made by Kakinie with llytpr-wl.v01nh TEAM. V1",
+  "description": "Vandal — ultra-fast, self-contained YouTube frontend. InnerTube direct-play engine + instance cooperation mesh (shared proxy pool) + Ask AI. An independent open project.",
   "main": "index.js",
   "type": "commonjs",
-  "author": "Kakinie with llytpr-wl.v01nh TEAM",
-  "license": "MIT",
+  "author": "Vandal Project",
+  "license": "SEE LICENSE IN LICENSE",
   "engines": {
     "node": ">=18.17"
   },
@@ -13,7 +13,7 @@
     "start": "node index.js",
     "start:edge": "node scripts/launch.mjs",
     "dev": "node index.js",
-    "build:edge": "cd goedge && go build -trimpath -ldflags \"-s -w\" -o bin/persimmon-edge .",
+    "build:edge": "cd goedge && go build -trimpath -ldflags \"-s -w\" -o bin/vandal-edge .",
     "test:api": "node scripts/smoke.js",
     "test:edge": "node scripts/smoke-edge.js",
     "test:core": "node scripts/smoke-core.js",
@@ -26,6 +26,7 @@
     "express": "^4.21.2",
     "hls.js": "^1.7.0",
     "undici": "^6.21.1",
+    "ws": "^8.21.3",
     "youtube-search-api": "^2.0.1"
   }
 }

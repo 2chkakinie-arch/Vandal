@@ -1,5 +1,5 @@
 'use strict';
-/** Upstream/content error with HTTP status + code — llytpr-wl.v01nh. */
+/** Upstream/content error with HTTP status + code — Vandal. */
 class YTError extends Error {
   constructor(message, status = 502, code = 'UPSTREAM') {
     super(message);

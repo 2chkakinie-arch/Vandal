@@ -280,7 +280,7 @@ func TestCoreAuthToken(t *testing.T) {
 
 	req, _ := http.NewRequest("POST", srv.URL+"/v1/hedge", strings.NewReader(`{"requests":[]}`))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Persimmon-Core", "s3cret")
+	req.Header.Set("X-Vandal-Core", "s3cret")
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

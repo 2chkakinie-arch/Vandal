@@ -1,11 +1,11 @@
-/* llytpr-wl.v01nh — frontend SPA.
+/* Vandal — frontend SPA.
  * InnerTube-backed YouTube experience: personalized home / search / watch
  * (direct-first playback with instant relay fallback, MSE HD "DashLite") /
  * comments / channel / playlist / dedicated shorts surfaces.
  * Local profile (history / likes / saved / subs) lives in localStorage only —
  * nothing personal ever leaves the browser except anonymous query signals.
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1 */
+ * Vandal Project — independent open project. */
 'use strict';
 (() => {
 
@@ -42,9 +42,9 @@ function linkify(text) {
 
 /* -------------------------------------------------- local profile storage */
 const Store = {
-  get(k, def) { try { const v = JSON.parse(localStorage.getItem('llytpr:' + k)); return v ?? def; } catch (_) { return def; } },
-  set(k, v) { try { localStorage.setItem('llytpr:' + k, JSON.stringify(v)); } catch (_) { /* private mode */ } },
-  del(k) { try { localStorage.removeItem('llytpr:' + k); } catch (_) { /* private mode */ } },
+  get(k, def) { try { const v = JSON.parse(localStorage.getItem('vandal:' + k)); return v ?? def; } catch (_) { return def; } },
+  set(k, v) { try { localStorage.setItem('vandal:' + k, JSON.stringify(v)); } catch (_) { /* private mode */ } },
+  del(k) { try { localStorage.removeItem('vandal:' + k); } catch (_) { /* private mode */ } },
 };
 /** 期限付きローカル保存（直結学習など鮮度が命の情報用）。
  *  かつて directOk / directBlocked が無期限の localStorage フラグだったため、
@@ -188,16 +188,16 @@ const mem = new Map();
  */
 function scGet(key) {
   try {
-    const raw = sessionStorage.getItem('llytpr:sc:' + key);
+    const raw = sessionStorage.getItem('vandal:sc:' + key);
     if (!raw) return undefined;
     const j = JSON.parse(raw);
     if (j && j.exp > Date.now()) return j.d;
-    sessionStorage.removeItem('llytpr:sc:' + key);
+    sessionStorage.removeItem('vandal:sc:' + key);
   } catch (_) { /* quota / private mode */ }
   return undefined;
 }
 function scSet(key, d, ttl) {
-  try { sessionStorage.setItem('llytpr:sc:' + key, JSON.stringify({ d, exp: Date.now() + ttl })); } catch (_) { /* quota */ }
+  try { sessionStorage.setItem('vandal:sc:' + key, JSON.stringify({ d, exp: Date.now() + ttl })); } catch (_) { /* quota */ }
 }
 async function api(path, { ttl = 5 * 60e3, method = 'GET', body, persist = 0 } = {}) {
   const key = method + ':' + path + (body ? ':' + body : '');

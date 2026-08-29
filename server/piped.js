@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Piped last-resort provider for llytpr-wl.v01nh.
+ * Piped last-resort provider for Vandal.
  * Used ONLY when every InnerTube client × transport combination fails
  * (the "LOGIN_REQUIRED wall" scenario). Public Piped instances proxy
  * googlevideo through their own hosts, so the URLs they return are NOT
@@ -11,7 +11,7 @@
  * wins, the winner is cached, and repeated failures open a circuit
  * breaker so we never stall the player path on dead infrastructure.
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 
 const DEFAULT_INSTANCES = [
@@ -26,7 +26,7 @@ const BREAKER_TIME = 10 * 60 * 1000;
 
 class PipedProvider {
   constructor() {
-    this.instances = (process.env.LLY_PIPED || '').split(',').map(s => s.trim()).filter(Boolean)
+    this.instances = (process.env.VANDAL_PIPED || process.env.LLY_PIPED || '').split(',').map(s => s.trim()).filter(Boolean)
       .concat(DEFAULT_INSTANCES);
     this.instances = [...new Set(this.instances)];
     this.goodInstance = null;      // cached winner
@@ -45,7 +45,7 @@ class PipedProvider {
       const res = await fetch(`https://${host}/streams/${encodeURIComponent(videoId)}`, {
         signal: ac.signal,
         redirect: 'follow',
-        headers: { 'User-Agent': 'llytpr-wl.v01nh/1.0', 'Accept': 'application/json' },
+        headers: { 'User-Agent': 'Vandal/1.0', 'Accept': 'application/json' },
       });
       if (!res.ok) throw new Error('http ' + res.status);
       const j = await res.json();

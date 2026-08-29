@@ -8,7 +8,7 @@
   ],
   "tasks": {
     "start": {
-      "name": "Start Persimmon (Go edge + Node)",
+      "name": "Start Vandal (Go edge + Node)",
       "command": "bash scripts/start.sh",
       "runAtStart": true,
       "preview": {

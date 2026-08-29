@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # ---------------------------------------------------------------------------
-# Persimmon 汎用コンテナ（Railway / Render(docker) / Fly.io / Koyeb / VPS 等）
+# Vandal 汎用コンテナ（Railway / Render(docker) / Fly.io / Koyeb / VPS 等）
 #   1段目: Go エッジ（静的アセットのメモリ配信＋リバースプロキシ）をビルド
 #   2段目: Node 依存の本番インストール
 #   3段目: 実行イメージ（node:22-alpine + エッジバイナリ）
@@ -11,7 +11,7 @@ FROM golang:1.23-alpine AS edgebuild
 WORKDIR /src
 COPY goedge/ .
 # 標準ライブラリのみ使用 → 外部モジュール取得なしでオフラインでもビルド可能
-RUN CGO_ENABLED=0 GO111MODULE=on go build -trimpath -ldflags "-s -w" -o /out/persimmon-edge .
+RUN CGO_ENABLED=0 GO111MODULE=on go build -trimpath -ldflags "-s -w" -o /out/vandal-edge .
 
 FROM node:22-alpine AS deps
 WORKDIR /app
@@ -23,7 +23,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=edgebuild /out/persimmon-edge ./goedge/bin/persimmon-edge
+COPY --from=edgebuild /out/vandal-edge ./goedge/bin/vandal-edge
 
 # アプリ本体
 COPY package.json ./

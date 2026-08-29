@@ -47,19 +47,28 @@ function renderChannel(rawId, params) {
         toast(subbed ? 'チャンネル登録しました（この端末に保存）' : '登録を解除しました');
       });
       if (d.continuation) {
+        // 永久読み込み: 継続トークンがある限りスクロールで動画を自動追記する。
+        // 既存グリッドへ追記すると（再生リストだけのチャンネル等で）対象要素が
+        // 無い・誤った場所へ入るバグがあったため、専用グリッドを末尾に用意する。
         let cont2 = d.continuation, loading = false;
-        lazySentinel($('#ch-content'), () => {
-          if (loading) return;
+        const more = document.createElement('div');
+        more.className = 'grid';
+        $('#ch-content')?.appendChild(more);
+        let sent = null;
+        const loadMore = () => {
+          if (loading || !cont2) return;
           loading = true;
           api(`/api/channel/${encodeURIComponent(id)}?c=${encodeURIComponent(cont2)}`, { ttl: 8 * 60e3 })
             .then((n) => {
               loading = false;
               cont2 = n.continuation;
-              const grid = $('#ch-content .grid:last-child');
-              grid?.insertAdjacentHTML('beforeend', (n.items || []).filter(i => i.kind === 'video').map(v => videoCard(v)).join(''));
+              const items = (n.items || []).filter(i => i.kind === 'video' || i.kind === 'short');
+              more.insertAdjacentHTML('beforeend', items.map(v => (v.kind === 'short' ? shortCard(v) : videoCard(v))).join(''));
+              if (!cont2) { sent?.done(); sent = null; }
             })
-            .catch(() => { loading = false; });
-        });
+            .catch(() => { loading = false; }); // 失敗時はスクロール再開で再試行
+        };
+        sent = lazySentinel($('#ch-content'), loadMore);
       }
     })
     .catch(e => errBox('チャンネルを読み込めませんでした: ' + e.message, () => renderChannel(rawId, params)));

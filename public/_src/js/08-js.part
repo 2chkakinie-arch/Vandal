@@ -9,6 +9,7 @@ route(/^\/shorts\/([\w-]{11})$/, (id) => renderShort(id));
 route(/^\/feed\/subscriptions$/, () => renderSubscriptions());
 route(/^\/feed\/you$/, () => renderMyPage());
 route(/^\/settings$/, () => renderSettings());
+route(/^\/doc$/, () => renderDoc());
 
 /* ------------------------------------------------------------ masthead wire */
 $('#search-form').addEventListener('submit', (e) => {
@@ -83,7 +84,7 @@ sInput.addEventListener('keydown', (e) => {
 function applyTheme(dark, { save = true } = {}) {
   document.documentElement.classList.toggle('dark', !!dark);
   document.body.classList.toggle('dark', !!dark);
-  if (save) { try { localStorage.setItem('llytpr-theme', dark ? 'dark' : 'light'); } catch (_) {} }
+  if (save) { try { localStorage.setItem('vandal-theme', dark ? 'dark' : 'light'); } catch (_) {} }
   $('meta[name=theme-color]')?.setAttribute('content', dark ? '#0f0f0f' : '#ffffff');
 }
 $('#theme-toggle').addEventListener('click', () => {
@@ -120,7 +121,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* done callback to signal full load */
-console.log('%c Vandal %c Made by Kakinie with llytpr-wl.v01nh TEAM. V1 ', 'background:linear-gradient(90deg,#ff4d4d,#ff0000);color:#fff;border-radius:4px;padding:2px 6px;font-weight:800', 'color:#888');
+console.log('%c Vandal %c 独立したオープンプロジェクト ', 'background:linear-gradient(90deg,#ff2ec4,#ff5c33,#ffe600);color:#0a0a0a;border-radius:4px;padding:2px 6px;font-weight:800', 'color:#888');
 render();
 
 })();

@@ -15,13 +15,13 @@
  * data/config.json へ永続化（Vercel では /tmp — セッション内のみ）。
  * 変更は logbus 経由で SSE 配信され、設定ページに即時反映される。
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 const fs = require('node:fs');
 const path = require('node:path');
 const { logbus } = require('./logbus');
 
-const DATA_DIR = process.env.VERCEL ? '/tmp/llytpr-data' : path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.VERCEL ? '/tmp/vandal-data' : path.join(__dirname, '..', 'data');
 const FILE = path.join(DATA_DIR, 'config.json');
 
 const DEFAULTS = {

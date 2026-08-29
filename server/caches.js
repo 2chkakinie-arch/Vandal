@@ -1,5 +1,5 @@
 'use strict';
-/** Shared InnerTube caches — llytpr-wl.v01nh. */
+/** Shared InnerTube caches — Vandal. */
 const { TTLCache } = require('./cache');
 
 const CACHE_MIN = 60 * 1000;

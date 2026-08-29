@@ -1,6 +1,6 @@
 'use strict';
 /**
- * InnerTube transport layer — llytpr-wl.v01nh.
+ * InnerTube transport layer — Vandal.
  * youtubei POST with rotating free-proxy transport + visitor data + cipher probe.
  */
 const { proxyManager } = require('./proxies');
@@ -14,7 +14,7 @@ const { throwIfHedgeDefinitive } = require('./hedge');
 const API_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 const HOST_WEB = 'https://www.youtube.com';
 /**
- * probePlayable — llytpr++ 直結エンジンの心臓。
+ * probePlayable — Vandal 直結エンジンの心臓。
  * 2026-08 実測: ANDROID/IOS 系プリ署名 googlevideo URL は `ip=` パラメータを含むが
  * サーバー側で強制されず、任意 egress・任意 UA で 206 が返る（= ブラウザが直接再生可能）。
  * これは Invidious の「署名を自前で解いた生 URL をクライアントへ渡す」方式や

@@ -1,20 +1,21 @@
 'use strict';
 /**
- * llytpr-wl.v01nh — ultra-fast YouTube frontend.
- * InnerTube API + rotating free-proxy transport + cipher solver.
+ * Vandal — ultra-fast, self-contained YouTube frontend.
+ * InnerTube API + rotating free-proxy transport + cipher solver +
+ * instance cooperation mesh (shared living-proxy pool).
  *
  * Runs standalone (node index.js, PORT env) and on Vercel (@vercel/node picks
  * up the exported express app).
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — an independent open project.
  */
 const path = require('node:path');
 const express = require('express');
 const compression = require('compression');
 
 const { router } = require('./server/routes');
-const { router: diagRouter } = require('./server/diag');
 const { proxyManager } = require('./server/proxies');
+const { mesh } = require('./server/mesh');
 const it = require('./server/innertube');
 const { logbus } = require('./server/logbus');
 
@@ -26,18 +27,15 @@ app.set('trust proxy', true);
 // （再圧縮できない上に CPU 消費と初バイト遅延だけが増えるため）。
 // 高速化: level 1 — JSON は level 6 と比べて圧縮率が ~5% 落ちるだけで
 // CPU 時間が 1/3 以下になり、多数の小さな API 応答の初バイトが速くなる。
-// /api/diag/logs (SSE) は圧縮するとバッファリングされてライブ性が死ぬため除外。
 app.use(compression({
   level: 1,
   filter(req, res) {
-    if (req.path.startsWith('/api/diag/')) return false; // SSE・テストは生で流す
     if (/^\/api\/(stream|thumb)\b/.test(req.path)) return false; // 動画/画像リレーは生で流す
     return compression.filter(req, res);
   },
 }));
 
 // API
-app.use(diagRouter);
 app.use(router);
 
 // Static SPA assets
@@ -83,9 +81,9 @@ if (require.main === module) {
   // HOST env（既定 '0.0.0.0' = 従来どおり）。Go エッジ配下ではランチャーが
   // 127.0.0.1 を指定してローカル専用バインドにする（外部へは公開されない）。
   const host = process.env.HOST || '0.0.0.0';
-  app.listen(port, host, () => {
-    console.log(`[llytpr-wl.v01nh] listening on ${host}:${port}`);
-    console.log('[llytpr-wl.v01nh] Made by Kakinie with llytpr-wl.v01nh TEAM. V1');
+  const server = app.listen(port, host, () => {
+    console.log(`[vandal] listening on ${host}:${port}`);
+    console.log('[vandal] Vandal Project — independent open project');
     // 高速化（初回待ち短縮）: 起動と同時に裏で3つ同時に暖機する —
     //   1. プロキシプール（L1 スキャン → L2/L3 認定へ直行）
     //   2. ホームフィード（最初の /api/home がいきなりキャッシュヒット）
@@ -96,4 +94,8 @@ if (require.main === module) {
     it.getVisitorId().catch(() => {});
     logbus.info('engine', 'サーバー起動 — バックグラウンド暖機開始（プロキシ/ホーム/visitor）');
   });
+  // インスタンス協力メッシュ（WebSocket）— 公開 URL / 生きているプロキシを共有。
+  // オプトイン（VANDAL_MESH_URL / VANDAL_MESH_PEERS）。未設定なら従来どおり単独運用。
+  mesh.attach(server);
+  mesh.start();
 }

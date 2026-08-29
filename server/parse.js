@@ -1,6 +1,6 @@
 'use strict';
 /**
- * InnerTube payload parsers — llytpr-wl.v01nh. Pure functions, no I/O.
+ * InnerTube payload parsers — Vandal. Pure functions, no I/O.
  * (Source is intentionally split across modules.)
  */
 

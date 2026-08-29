@@ -6,15 +6,15 @@
  * current base.js and executes them — no fragile hand-written reverse
  * engineering. Results are memoized per player build and persisted to disk.
  *
- * Made by Kakinie with llytpr-wl.v01nh TEAM. V1
+ * Vandal Project — independent open project.
  */
 const fs = require('node:fs');
 const path = require('node:path');
 
-const DATA_DIR = process.env.VERCEL ? '/tmp/llytpr-data' : path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.VERCEL ? '/tmp/vandal-data' : path.join(__dirname, '..', 'data');
 const PLAYER_CACHE = path.join(DATA_DIR, 'player-cache.json');
 
-// Last verified player build (2026-08, llytpr smoke tests). Refresh happens
+// Last verified player build (2026-08, vandal smoke tests). Refresh happens
 // automatically at runtime via watch-page discovery; this is just a seed.
 const SEED_PLAYER_URLS = [
   '/s/player/b0d2d49a/player_es6.vflset/es_MX/base.js',
