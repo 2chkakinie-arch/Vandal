@@ -9,6 +9,7 @@ route(/^\/shorts\/([\w-]{11})$/, (id) => renderShort(id));
 route(/^\/feed\/subscriptions$/, () => renderSubscriptions());
 route(/^\/feed\/you$/, () => renderMyPage());
 route(/^\/settings$/, () => renderSettings());
+route(/^\/instances$/, () => renderInstances());
 route(/^\/doc$/, () => renderDoc());
 
 /* ------------------------------------------------------------ masthead wire */

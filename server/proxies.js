@@ -39,6 +39,7 @@ const LIST_URLS = [
 ];
 const DATA_DIR = process.env.VERCEL ? '/tmp/vandal-data' : path.join(__dirname, '..', 'data');
 const CACHE_FILE = path.join(DATA_DIR, 'proxy-cache.json');
+const SHARDS = 8; // プロキシ収集の分業シャード数（メッシュで各インスタンスが別シャードを担当）
 
 const TEST_TARGET = 'https://www.youtube.com/generate_204';
 const GV_TARGET = 'https://rr5---sn-nx57ynsl.googlevideo.com/generate_204';
@@ -71,16 +72,25 @@ class ProxyManager {
     // googlevideo への keep-alive コネクションをまとめて再利用する。
     // メタ用とは別系統にして、動画中継のヘッビーなトラフィックが
     // InnerTube POST のコネクションプールを圧迫しないようにする。
+    // ※ keepAliveTimeout は 15 秒: 接続先がアイドル接続を先に切っても
+    //   「放置後の再接続で死んだソケットを掴む」バグ（放置後の動画が異常に
+    //   遅くなる原因）を避ける。undici は keepAliveTimeout 超過のソケットを
+    //   再利用しないので、放置からの復帰が常に新規接続から始まる。
     this._directRelayAgent = new Agent({
-      keepAliveTimeout: 30000,
-      keepAliveMaxTimeout: 60000,
+      keepAliveTimeout: 15 * 1000,
+      keepAliveMaxTimeout: 30 * 1000,
       connections: 16,
+      connect: { timeout: 6000 },
     });
     this.refreshing = null;
     this.certifying = null;
     this.lastRefresh = 0;
     this.lastCertify = 0;
     this.enabled = process.env.VANDAL_NO_PROXY !== '1';
+    // 分業: このインスタンスが担当するプロキシ候補シャード（表示名から決定論的に導出。
+    // メッシュの各インスタンスが別シャードを走査するので、集合としての発見速度が上がる）
+    this.shard = this._shardOf(process.env.VANDAL_MESH_NAME || process.env.RENDER_EXTERNAL_URL || process.env.HOSTNAME || 'vandal');
+    this.stats = { ok: 0, bad: 0, since: Date.now() }; // 直近の上流成否（health スコア用）
     try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) { /* read-only fs */ }
     this._loadDisk();
     if (this.enabled) {
@@ -88,6 +98,34 @@ class ProxyManager {
       if (this._refreshLoop.unref) this._refreshLoop.unref();
       setTimeout(() => this.refresh().catch(() => {}), 50).unref?.();
     }
+  }
+
+  _shardOf(name) {
+    let h = 5381;
+    const s = String(name || 'vandal');
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h % SHARDS;
+  }
+
+  issuerCount() {
+    const now = Date.now();
+    return this.pool.filter((p) => p.issuerTs && now - p.issuerTs < CERT_TTL).length;
+  }
+
+  gvCount() {
+    const now = Date.now();
+    return this.pool.filter((p) => p.gvOkTs && now - p.gvOkTs < CERT_TTL).length;
+  }
+
+  /** 直近の上流成功率（0〜1）。サンプルが少ないうちは 1（悲観しない） */
+  okRate() {
+    const { ok, bad, since } = this.stats;
+    const total = ok + bad;
+    if (total < 5) return 1;
+    const ageH = (Date.now() - since) / 3600000;
+    const decay = Math.pow(0.5, Math.max(0, ageH) * 2); // 古いサンプルは 2 時間で半減
+    const o = ok * decay + 2, b = bad * decay + 0.5;    // ラプラス平滑化
+    return Math.min(1, o / (o + b));
   }
 
   _loadDisk() {
@@ -132,8 +170,13 @@ class ProxyManager {
     if (!a) {
       a = new ProxyAgent({
         uri: url,
-        keepAliveTimeout: 8000,
-        keepAliveMaxTimeout: 15000,
+        // keep-alive は 4 秒（undici 既定相当）: 無料プロキシはアイドル接続を
+        // 数秒で切るものが多く、長い keep-alive は「放置後の最初のリクエストが
+        // 死んだソケットを掴んで数秒〜数十秒固まる」バグを生む。短期間だけ
+        // 再利用し、放置からの復帰は常に新鮮な接続で行う。
+        keepAliveTimeout: 4000,
+        keepAliveMaxTimeout: 8000,
+        connect: { timeout: 5000 },
         // 高速化（リレー専用）: 無料プロキシ経由の動画バイト中継で、
         // 既定の小さなソケットバッファが TCP ウィンドウを詰まらせるのを
         // 防ぐ。メモリ使用量は総プロキシ数に比例するが、実際に開かれる
@@ -293,8 +336,15 @@ class ProxyManager {
           const spanLists = logbus.span('proxy', '水源リスト取得', { sources: LIST_URLS.length });
           try {
             const fresh = await this._fetchLists();
-            if (fresh.length) { this.list = fresh; this.scanCursor = 0; }
-            spanLists({ candidates: this.list.length });
+            if (fresh.length) {
+              this.list = fresh;
+              // 分業: 各インスタンスは候補リストの別シャード（担当区間）から走査を
+              // 始める。同じリストを全員が先頭から舐めると発見が重複し非効率だが、
+              // シャード分割なら集合として異なる候補を同時実測でき、メッシュ経由で
+              // 全員のプールが足し合わされる（= 収集速度がインスタンス数倍になる）。
+              this.scanCursor = Math.floor((this.shard / SHARDS) * this.list.length);
+            }
+            spanLists({ candidates: this.list.length, shard: `${this.shard}/${SHARDS}` });
           } catch (e) { spanLists({ __error: true, msg: e?.message }); /* keep old list */ }
         }
         const known = new Set(this.pool.map(p => p.url));
@@ -393,6 +443,8 @@ class ProxyManager {
 
   markBad(url) {
     if (!url) return;
+    this.stats.bad += 1;
+    if (this.stats.ok + this.stats.bad > 5000) { this.stats.ok = 0; this.stats.bad = 0; this.stats.since = Date.now(); }
     const p = this.pool.find(p => p.url === url);
     if (!p) return;
     p.fails++;
@@ -418,6 +470,8 @@ class ProxyManager {
   }
 
   markGood(url, latency) {
+    this.stats.ok += 1;
+    if (this.stats.ok + this.stats.bad > 5000) { this.stats.ok = 1; this.stats.bad = 0; this.stats.since = Date.now(); }
     const p = this.pool.find(p => p.url === url);
     if (!p) return;
     p.fails = 0;
@@ -509,8 +563,8 @@ class ProxyManager {
         gv: !!p.gvOkTs && Date.now() - p.gvOkTs < CERT_TTL,
         issuer: !!p.issuerTs && Date.now() - p.issuerTs < CERT_TTL,
       })),
-      issuers: this.pool.filter(p => p.issuerTs && Date.now() - p.issuerTs < CERT_TTL).length,
-      gvOk: this.pool.filter(p => p.gvOkTs && Date.now() - p.gvOkTs < CERT_TTL).length,
+      issuers: this.issuerCount(),
+      gvOk: this.gvCount(),
       listSize: this.list.length,
       cursor: this.scanCursor,
       lastRefresh: this.lastRefresh,
@@ -518,6 +572,8 @@ class ProxyManager {
       certifying: !!this.certifying,
       refreshing: !!this.refreshing,
       poolTarget: this.poolTarget(),
+      shard: { index: this.shard, count: SHARDS },
+      okRate: Math.round(this.okRate() * 100) / 100,
     };
   }
 }

@@ -42,6 +42,9 @@ const wrap = (fn) => (req, res) => {
 };
 /* ------------------------------------------------------------- media proxy */
 
+/** 中継の現在負荷（/health の「混み具合」に表示）。routes/media.js が実測カウントする */
+const relayState = { active: 0, peak: 0, total: 0, bytes: 0 };
+
 /**
  * 高速化: 同一 (video, itag, Range) の並行リクエストを 1 本の上流フェッチに束ねる。
  * ブラウザ（特に MSE の DashLite と二重 <video>/<audio> 構成）は同じセグメントを
@@ -50,13 +53,13 @@ const wrap = (fn) => (req, res) => {
  * （巨大な full-file GET をメモリに溜めないよう、明示 Range 8MB 以下のみ対象）
  */
 const _streamJobs = new Map(); // "v|itag|range" -> Promise<buffered|null>
-async function fetchStreamBytes(url, headers, dispatcher) {
+async function fetchStreamBytes(url, headers, dispatcher, { headersTimeout = 20000 } = {}) {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 25000);
+  const t = setTimeout(() => ac.abort(), Math.max(8000, headersTimeout + 6000));
   try {
     const upstream = await undiciRequest(url, {
       method: 'GET', headers, signal: ac.signal, dispatcher,
-      maxRedirections: 2, headersTimeout: 20000,
+      maxRedirections: 2, headersTimeout,
     });
     if (upstream.statusCode >= 400) { upstream.body.dump().catch(() => {}); return null; }
     const pass = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control'];
@@ -83,7 +86,7 @@ function isGoogleVideo(u) {
 }
 /* ---------------- hls (live) proxy with playlist rewriting ---------------- */
 const hlsPins = new Map(); // videoId -> {proxyUrl}
-async function pipeUpstream(url, headers, req, res, { dispatcher } = {}) {
+async function pipeUpstream(url, headers, req, res, { dispatcher, headersTimeout = 20000 } = {}) {
   const ac = new AbortController();
   req.on('close', () => ac.abort());
   const upstream = await undiciRequest(url, {
@@ -92,7 +95,7 @@ async function pipeUpstream(url, headers, req, res, { dispatcher } = {}) {
     signal: ac.signal,
     dispatcher,
     maxRedirections: 2,
-    headersTimeout: 20000,
+    headersTimeout, // リレー側から短縮できる（放置後の死んだ egress を 8 秒で諦めて回転する）
     bodyTimeout: 0,
   });
   if ([403, 410].includes(upstream.statusCode)) {
@@ -140,4 +143,4 @@ async function pipeUpstream(url, headers, req, res, { dispatcher } = {}) {
   res.end();
 }
 
-module.exports = { warmDefault, warmComments, wrap, fetchStreamBytes, isGoogleVideo, pipeUpstream, _streamJobs, hlsPins, PIPED_HOSTS };
+module.exports = { warmDefault, warmComments, wrap, fetchStreamBytes, isGoogleVideo, pipeUpstream, _streamJobs, hlsPins, PIPED_HOSTS, relayState };

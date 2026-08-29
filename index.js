@@ -16,6 +16,7 @@ const compression = require('compression');
 const { router } = require('./server/routes');
 const { proxyManager } = require('./server/proxies');
 const { mesh } = require('./server/mesh');
+const { health } = require('./server/health');
 const it = require('./server/innertube');
 const { logbus } = require('./server/logbus');
 
@@ -34,6 +35,12 @@ app.use(compression({
     return compression.filter(req, res);
   },
 }));
+
+// テレメトリ（同時処理数 / RPS → /health とメッシュの hello に乗る）
+app.use((req, res, next) => health.track(req, res, next));
+// インスタンス協力メッシュ: 公開リクエストの Host から自インスタンスの公開 URL を
+// 自動学習する（「デプロイして URL ができた時点で自動でメッシュリストに追加」の本体）。
+app.use((req, res, next) => mesh.learnFromRequest(req, res, next));
 
 // API
 app.use(router);
@@ -94,8 +101,12 @@ if (require.main === module) {
     it.getVisitorId().catch(() => {});
     logbus.info('engine', 'サーバー起動 — バックグラウンド暖機開始（プロキシ/ホーム/visitor）');
   });
-  // インスタンス協力メッシュ（WebSocket）— 公開 URL / 生きているプロキシを共有。
-  // オプトイン（VANDAL_MESH_URL / VANDAL_MESH_PEERS）。未設定なら従来どおり単独運用。
+  // インスタンス協力メッシュ（WebSocket）— **デフォルトで自動参加**。
+  // VANDAL_MESH_URL / VANDAL_MESH_PEERS は不要（任意の明示設定として残置）。
+  //   - 自 URL はデプロイ環境変数 or 最初の公開リクエストから自動検出・永続化
+  //   - ピアはゴシップ + 永続化レジストリで自動発見・自動再接続
+  //   - data/config.json の meshPrivate:true / VANDAL_MESH_PRIVATE=1 で匿名参加
+  //   - meshEnabled:false / VANDAL_MESH=0 で完全単独運用に戻せる
   mesh.attach(server);
   mesh.start();
 }

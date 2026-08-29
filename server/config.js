@@ -32,7 +32,16 @@ const DEFAULTS = {
   commentsPrefetch: true,   // watch 応答後のコメント先行取得
   homeKeepWarm: true,       // 誰かが見ている間ホームキャッシュを暖め続ける
   logLevel: 'trace',        // SSE/ログの最小レベル
+  // ---- インスタンス協力メッシュ（デフォルト ON。設定不要で自動参加） ----
+  meshEnabled: true,        // メッシュ参加（false で完全単独運用へ戻す）
+  meshPrivate: false,       // true = 自 URL を外へ共有しない（匿名参加。内部の共同作業は継続）
+  meshDelegate: true,       // 上位ティアの健全インスタンスへメタ取得を委譲 / 被委譲（分業）
 };
+
+// 環境変数による既定上書き（settings.json の値より先に適用される初期値）
+if (process.env.VANDAL_MESH === '0' || process.env.VANDAL_MESH === 'false') DEFAULTS.meshEnabled = false;
+if (process.env.VANDAL_MESH_PRIVATE === '1' || process.env.VANDAL_MESH_PRIVATE === 'true') DEFAULTS.meshPrivate = true;
+if (process.env.VANDAL_MESH_DELEGATE === '0') DEFAULTS.meshDelegate = false;
 
 class EngineConfig {
   constructor() {
@@ -60,6 +69,7 @@ class EngineConfig {
       case 'warmBytes': return Math.min(4096, Math.max(64, Number(v) || DEFAULTS.warmBytes));
       case 'proxyMode': return ['auto', 'proxy', 'direct'].includes(v) ? v : 'auto';
       case 'logLevel': return ['trace', 'debug', 'info', 'warn', 'error'].includes(v) ? v : 'trace';
+      case 'meshPrivate': case 'meshEnabled': case 'meshDelegate': return !!v;
       default: return typeof DEFAULTS[k] === 'boolean' ? !!v : v;
     }
   }

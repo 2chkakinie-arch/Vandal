@@ -794,6 +794,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           // 永久読み込み: 継続トークンがある限りスクロールで自動追記し続ける。
           // 失敗しても即座に打ち切らず、リトライで追記を再開する。
           let sent = null;
+          let emptyStreak = 0;
           const loadMore = () => {
             if (destroyed || loading || !cont) return;
             loading = true;
@@ -801,15 +802,24 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
               .then((n) => {
                 loading = false;
                 retries = 0;
-                cont = n.continuation;
+                // ループ防御: サーバーが同じトークンを返したらそれ以上進めない
+                // （壊れたトークンで同じページを無限に叩く事故を構造的に遮断）
+                if (!n || n.continuation === cont) cont = null;
+                else cont = n.continuation;
                 const list = $('#cm-list');
-                if (list) list.insertAdjacentHTML('beforeend', (n.comments || []).map(commentHtml).join(''));
-                if (!cont) { sent?.done(); sent = null; }
+                const got = (n?.comments || []).length;
+                if (list && got) list.insertAdjacentHTML('beforeend', (n.comments || []).map(commentHtml).join(''));
+                // 空ページ連続は継続不能（トークン失効など）とみなして静かに停止
+                emptyStreak = got ? 0 : (emptyStreak + 1);
+                if (!cont || emptyStreak >= 2) { sent?.done(); sent = null; }
               })
-              .catch(() => {
+              .catch((e) => {
                 loading = false;
+                // 4xx はこのトークン自体が無効（失効/破損）= リトライは無意味。
+                // 旧実装は同じ壊れた URL を 3 回叩いて 400 を 3 連発していた。
+                if (e?.status >= 400 && e?.status < 500) { cont = null; sent?.done(); sent = null; return; }
                 retries++;
-                if (retries <= 3) setTimeout(loadMore, 800 * retries); // 自動リトライ
+                if (retries <= 3) setTimeout(loadMore, 800 * retries); // 一時的失敗は自動リトライ
                 else { sent?.done(); sent = null; } // 何度も失敗 → 停止（再訪で再開）
               });
           };

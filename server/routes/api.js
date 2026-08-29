@@ -6,15 +6,18 @@ const { proxyManager } = require('../proxies');
 const { logbus } = require('../logbus');
 const { engineConfig } = require('../config');
 const it = require('../innertube');
-const { gocore } = require('../gocore');
 const { mesh } = require('../mesh');
 
 const router = express.Router();
 
-router.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now(), proxies: proxyManager.pool.length, core: gocore.status(), mesh: mesh.isActive }));
-
-// インスタンス協力メッシュの集計状況（公開 URL / 共有プロキシ）。
-router.get('/api/mesh/state', (req, res) => res.json(mesh.state()));
+// インスタンス協力メッシュの集計状況（インスタンスリスト / 共有プロキシ）。
+// URL は既定で仮名化表示（デプロイ者の URL をそのまま訪問者へ晒さない）。
+// ループバックからの ?full=1 のみ完全表示（デプロイ者自身の確認用）。
+router.get('/api/mesh/state', (req, res) => {
+  const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || '');
+  const full = local && String(req.query.full || '') === '1';
+  res.json(mesh.state({ full }));
+});
 router.get('/api/proxies', (req, res) => res.json(proxyManager.status()));
 router.post('/api/proxies/refresh', wrap(async (req, res) => {
   const pool = await proxyManager.refresh({ force: true });
@@ -100,6 +103,16 @@ router.get('/api/warm/:id', wrap(async (req, res) => {
   warmDefault(id);
   res.json({ ok: true });
 }));
+// 【重要】/next は /:id より先に登録する。Express は登録順にマッチするため、
+// 旧実装のように /:id を先に置くと /api/comments/next が :id='next' として
+// 捕捉され「bad id」の 400 になっていた = コメントの無限取得が必ず 400 で
+// 死ぬ本バグの根だった（トークンの二重エンコードは二次的な問題）。
+router.get('/api/comments/next', wrap(async (req, res) => {
+  const c = String(req.query.c || '');
+  if (!c) { res.status(400).json({ error: 'c required' }); return; }
+  // commentsNext 内で % エンコード剥がし・形検査・失効時の静かな終端化まで済む
+  res.json(await it.commentsNext(c));
+}));
 router.get('/api/comments/:id', wrap(async (req, res) => {
   const id = String(req.params.id || '');
   if (!/^[\w-]{11}$/.test(id)) { res.status(400).json({ error: 'bad id' }); return; }
@@ -111,11 +124,6 @@ router.get('/api/comments/:id', wrap(async (req, res) => {
   logbus.info('http', 'GET /api/comments/:id', { v: id, ms: Date.now() - t0, n: (out.comments || []).length, tokenReuse: !!token });
   res.json(out);
 }));
-router.get('/api/comments/next', wrap(async (req, res) => {
-  const c = String(req.query.c || '');
-  if (!c) { res.status(400).json({ error: 'c required' }); return; }
-  res.json(await it.commentsNext(c));
-}));
 router.get('/api/channel/:id', wrap(async (req, res) => {
   const raw = req.params.id || '';
   res.json(await it.channel(raw, {
@@ -123,9 +131,7 @@ router.get('/api/channel/:id', wrap(async (req, res) => {
     continuation: req.query.c ? String(req.query.c) : undefined,
   }));
 }));
-router.get('/api/playlist/:id', wrap(async (req, res) => {
-  res.json(await it.playlist(String(req.params.id || '').replace(/[^\w-]/g, '')));
-}));
+// 【重要】/next・/panel-next は /:id より先に登録（/api/comments/next と同一根のバグ防止）。
 router.get('/api/playlist/next', wrap(async (req, res) => {
   const c = String(req.query.c || '');
   if (!c) { res.status(400).json({ error: 'c required' }); return; }
@@ -137,6 +143,9 @@ router.get('/api/playlist/panel-next', wrap(async (req, res) => {
   if (!c) { res.status(400).json({ error: 'c required' }); return; }
   res.json(await it.panelNext(c));
 }));
+router.get('/api/playlist/:id', wrap(async (req, res) => {
+  res.json(await it.playlist(String(req.params.id || '').replace(/[^\w-]/g, '')));
+}));
 router.get('/api/suggest', wrap(async (req, res) => {
   const q = String(req.query.q || '').slice(0, 100);
   if (!q) { res.json({ suggestions: [] }); return; }
@@ -144,6 +153,72 @@ router.get('/api/suggest', wrap(async (req, res) => {
 }));
 router.get('/api/resolve/:target', wrap(async (req, res) => {
   res.json({ id: await it.resolveChannelId(String(req.params.target)) });
+}));
+
+/* ------------------------------------------------------- settings (settings.json 相当) */
+
+/** デプロイ後もコードを触らずに変えられる実行時設定。data/config.json に永続化される
+ *  （= 「setting.json みたいなところからプライベートインスタンスに切り替え」の本体）。
+ *  環境変数 VANDAL_MESH_PRIVATE=1 / VANDAL_MESH=0 も初期値として効く。 */
+router.get('/api/settings', (req, res) => {
+  const c = engineConfig.get();
+  res.json({
+    ...c,
+    mesh: mesh.state(),
+  });
+});
+router.post('/api/settings', wrap(async (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  // mesh 系の変更はメッシュへ即反映（private 化した瞬間から URL を外へ出さない）
+  const out = engineConfig.set(body);
+  if (body.meshPrivate !== undefined || body.meshEnabled !== undefined) {
+    logbus.info('mesh', 'メッシュ設定を変更', { private: out.meshPrivate, enabled: out.meshEnabled });
+    mesh.nudge?.();
+  }
+  res.json({ ...out, mesh: mesh.state() });
+}));
+
+/* ------------------------------------------- mesh delegate（ピアからの作業委譲を受ける側） */
+
+/**
+ * 上位ティアのインスタンスが「メタ情報取得（player 発行）」を委譲されるときの受口。
+ *  - X-Vandal-Mesh ヘッダ（メッシュの hello で交換済みのケイパビリティトークン）が必須
+ *    → インターネットからの野良 POST を弾く（メッシュ参加者だけが使える）。
+ *  - 同時実行とレートを制限して、自分のユーザー体験を犠牲にしない。
+ */
+const _delegateJobs = { live: 0, windowStart: 0, accepted: 0 };
+router.post('/api/mesh/delegate/player', wrap(async (req, res) => {
+  if (!mesh.checkDelegateToken(req)) { res.status(403).json({ error: 'not a mesh peer', code: 'MESH_FORBIDDEN' }); return; }
+  if (!engineConfig.get('meshDelegate')) { res.status(503).json({ error: 'delegate disabled', code: 'DELEGATE_OFF' }); return; }
+  const v = String(req.body?.videoId || '');
+  if (!/^[\w-]{11}$/.test(v)) { res.status(400).json({ error: 'bad id', code: 'BAD_ID' }); return; }
+  const now = Date.now();
+  if (now - _delegateJobs.windowStart > 60000) { _delegateJobs.windowStart = now; _delegateJobs.accepted = 0; }
+  if (_delegateJobs.accepted >= 30 || _delegateJobs.live >= 4) {
+    res.status(429).json({ error: 'busy', code: 'DELEGATE_BUSY' });
+    return;
+  }
+  _delegateJobs.accepted += 1;
+  _delegateJobs.live += 1;
+  try {
+    const p = await it.player(v);
+    res.json({
+      ok: true,
+      player: {
+        videoId: v,
+        title: p.title, author: p.author, channelId: p.channelId,
+        viewCount: p.viewCount, lengthSeconds: p.lengthSeconds, isLive: p.isLive, isShort: p.isShort,
+        publishDate: p.publishDate, uploadDate: p.uploadDate, category: p.category, keywords: p.keywords,
+        progressive: p.progressive, videos: p.videos, audios: p.audios,
+        hls: p.hls, expiresInSeconds: p.expiresInSeconds,
+        __urlMap: p.__urlMap,
+        source: 'peer',
+      },
+      proxies: proxyManager.exportProxies(40),
+    });
+  } finally {
+    _delegateJobs.live -= 1;
+  }
 }));
 
 module.exports = { router };
