@@ -245,15 +245,18 @@ async function fetchText(url, { preferProxy, timeout = 12000, ret } = {}) {
 /* ------------------------------------------------------------- visitor data */
 
 let _vdJob = null; // 同時多発の visitor 取得を 1 本に束ねる
+let _vdSetAt = 0;  // 最後に visitorData をキャッシュへ載せた時刻（事前再取得の判定用）
+let _vdTryAt = 0;  // 最後に取得を試みた時刻（失敗時のリトライ爆発を防ぐ）
 async function getVisitorId() {
   let vd = caches.visitor.get('vd');
   if (vd) return vd;
   if (_vdJob) return _vdJob;
   _vdJob = (async () => {
     try {
+      _vdTryAt = Date.now();
       const res = await callApi('search', { query: 'youtube' }, CLIENTS.WEB);
       const v = decodeURIComponent(res?.responseContext?.visitorData || '');
-      if (v) caches.visitor.set('vd', v, 20 * CACHE_MIN);
+      if (v) { caches.visitor.set('vd', v, 20 * CACHE_MIN); _vdSetAt = Date.now(); }
     } catch (_) { /* stays undefined; most endpoints work without */ }
     finally { _vdJob = null; }
   })();
@@ -266,11 +269,23 @@ async function getVisitorId() {
  * 検索/視聴/コメント等の初回リクエスト前に直列に挟まっていた。
  * 大半のエンドポイントは visitorId 無しで動作するため、初回は即座に発行し、
  * visitor 取得は並行で回して次回リクエストから使えばよい。
+ *
+ * さらに放置バグ対策（v2）: TTL 25 分に対し 16 分経過で**事前再取得**を裏で
+ * 蹴る。これをしないと「しばらく放置して戻ってきた」瞬間が必ず visitor 無しの
+ * リクエストになり、visitor を必要とする経路（コメント等）だけ最初の 1 往復が
+ * 遠回りになっていた。放置からの復帰でも常に温まった visitor が使える。
  */
+const VISITOR_PREWARM_MS = 16 * CACHE_MIN;
 function getVisitorIdFast() {
   const vd = caches.visitor.get('vd');
-  if (!vd) getVisitorId().catch(() => {});
-  return vd || undefined;
+  if (vd) {
+    if (Date.now() - _vdSetAt > VISITOR_PREWARM_MS && !_vdJob && Date.now() - _vdTryAt > 2 * CACHE_MIN) {
+      getVisitorId().catch(() => {});
+    }
+    return vd;
+  }
+  getVisitorId().catch(() => {});
+  return undefined;
 }
 
 module.exports = {

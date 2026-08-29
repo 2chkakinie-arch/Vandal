@@ -20,6 +20,7 @@ const { API_KEY, HOST_WEB, CLIENTS, PLAYER_CHAIN, probePlayable, sleep, rawFetch
 const { deepFind, textOf, bestThumb, extractItems } = require('./parse');
 const { gocore } = require('./gocore');
 const { throwIfHedgeDefinitive } = require('./hedge');
+const { mesh } = require('./mesh');
 
 
 
@@ -546,6 +547,18 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
     }
   }
 
+  // ---- メッシュ救済: 自 egress が総崩れのとき、重い救済ラウンドの前に
+  // S/A ティアの健全ピアへ発行を依頼する（往復 1 回で済む最速の復帰路）。
+  if (!win && !sabrFallback && mesh.canDelegate) {
+    try {
+      const peerRes = await mesh.delegatePlayer(videoId, { timeoutMs: 9000 });
+      if (peerRes?.__urlMap && (Object.keys(peerRes.__urlMap).length || peerRes.hls)) {
+        win = { res: { streamingData: { formats: [], adaptiveFormats: [] } }, transport: null, usable: [], clientKey: 'mesh-peer', params: null, __peerPlayer: peerRes };
+        logbus.info('mesh', '発行をピアへ委譲して救済', { v: videoId });
+      }
+    } catch (_) { /* fall through to local rescue */ }
+  }
+
   // ---- 緊急ローテーション: 全経路が LOGIN_REQUIRED/ERROR/network で潰れた時、
   // 「bot 確認画面」をユーザーに見せないため、プロキシプールを強制総入替して
   // フレッシュな egress でもう一周だけ戦う（IP BAN の時間的クラスタを回避）。
@@ -579,6 +592,11 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
 
   if (win) {
     const { res, transport, usable, clientKey, params } = win;
+    if (win.__peerPlayer) {
+      // ピア発行の結果をそのまま採用（goodCombo は汚さず、URL のエッジもピア側）
+      spanAll({ ok: true, client: 'mesh-peer', via: 'peer', formats: Object.keys(win.__peerPlayer.__urlMap || {}).length });
+      return { ...win.__peerPlayer, source: win.__peerPlayer.source || 'peer', __transport: null, __client: 'mesh-peer' };
+    }
     goodCombo = {
       clientKey, params,
       transportKind: transport?.kind || 'direct',
@@ -718,12 +736,42 @@ async function getVideoFull(videoId, opts = {}) {
   return p;
 }
 
+/**
+ * メッシュ分業（メタ取得の委譲）— ローカルの発行基盤が弱い（issuer 認定プロキシが
+ * 少ない / プールが枯れている）ときは、あらかじめ S/A ティアの健全ピアへ player 発行を
+ * **並行**で依頼しておく。自前の発行が成功すればその結果を優先し、ピアの応答は 1ms も
+ * 待たない（= 普段は速くならない）。自前が失敗した瞬間にピアの結果で即続行できるので、
+ * 「弱いインスタンスが重い発行処理に潰れる」ことを防ぎつつ全体の体感速度を上げる。
+ */
+function localEngineWeak() {
+  if (!proxyManager.enabled) return false;
+  return proxyManager.pool.length < 8 || proxyManager.issuerCount() < 2;
+}
+
 async function getVideoFullUncached(videoId, opts = {}) {
+  // 委譲は裏で先行発火（並行）。自前成功時は破棄、失敗時のみ採用。
+  const meshJob = (mesh.canDelegate && localEngineWeak())
+    ? mesh.delegatePlayer(videoId).catch(() => null)
+    : null;
   const [pl, nx] = await Promise.allSettled([player(videoId, opts), watchNext(videoId, opts)]);
-  if (pl.status === 'rejected' && nx.status === 'rejected') throw pl.reason;
+  if (pl.status === 'rejected' && nx.status === 'rejected') {
+    if (meshJob) {
+      const peer = await meshJob;
+      if (peer?.__urlMap) {
+        logbus.info('mesh', '自前発行失敗 → ピアの発行結果を採用', { v: videoId, source: peer.source || 'peer' });
+        const nxVal = nx.status === 'fulfilled' ? nx.value : null;
+        return assembleVideoFull(videoId, peer, nxVal, pl.reason);
+      }
+    }
+    throw pl.reason;
+  }
   const p = pl.status === 'fulfilled' ? pl.value : null;
   const n = nx.status === 'fulfilled' ? nx.value : null;
+  return assembleVideoFull(videoId, p, n, pl.status === 'rejected' ? pl.reason : null);
+}
 
+/** player 結果（自前 or ピア委譲 or Piped）と watchNext 結果を最終応答へ組み立てる共通出口。 */
+function assembleVideoFull(videoId, p, n, plReason) {
   // ---- map エントリを先に確定（直結判定とリレー修復の両方がこれを使う）
   let mapEntry = null;
   if (p?.__urlMap) {
@@ -795,7 +843,7 @@ async function getVideoFullUncached(videoId, opts = {}) {
       directUrls: p.__urlMap,
     } : null,
     playable: !!p && (p.progressive.length > 0 || p.videos.length > 0 || !!p.hls),
-    playability: p ? null : { status: pl.reason?.statusHint || 'ERROR', reason: pl.reason?.reason || pl.reason?.message || 'この動画は再生できません' },
+    playability: p ? null : { status: plReason?.statusHint || 'ERROR', reason: plReason?.reason || plReason?.message || 'この動画は再生できません' },
   };
   if (n && !out.title) out.title = n.videoId;
   return out;
@@ -829,11 +877,13 @@ async function getTunnelProxies(k = 2) {
 }
 
 function buildMapEntry(p) {
+  const ttlMs = Math.min(5 * 3600 * 1000, Math.max(300 * 1000, ((p.expiresInSeconds || 21600) - 300) * 1000));
   return {
     map: p.__urlMap,
     source: p.source || 'innertube',
     proxyUrl: p.__piped ? null : (p.__transport?.kind === 'proxy' ? p.__transport.url : null),
-    ttlMs: Math.min(5 * 3600 * 1000, Math.max(300 * 1000, ((p.expiresInSeconds || 21600) - 300) * 1000)),
+    ttlMs,
+    expAt: Date.now() + ttlMs, // 期限の残りを刻む（stale-while-revalidate の判定に使う）
     pinnedVerified: false,
   };
 }
@@ -931,6 +981,22 @@ async function getStreamUrl(videoId, itag, { verify = false } = {}) {
         if (e2) { e2.pinChecking = false; }
       });
     }
+  }
+  /**
+   * 放置バグ対策（stale-while-revalidate）: ストリームマップの残り寿命が
+   * 15 分を切ったら、応答は現行 URL で即返しつつ裏で次のマップを発行して
+   * 差し替える。旧実装は寿命が尽きるまで放置し、尽きた瞬間に全セグメントが
+   * 403 → 発行し直し → 「放置して戻ると異常に遅い」状態だった。常に期限の
+   * 前に新しい URL へ静かに入れ替わるため、いつ訪れても初速が変わらない。
+   */
+  if (entry?.expAt && entry.expAt - Date.now() < 15 * 60 * 1000 && !_mapPending.has('swr:' + videoId)) {
+    _mapPending.set('swr:' + videoId, (async () => {
+      try {
+        logbus.debug('player', 'ストリームマップを事前更新（放置対策 SWR）', { v: videoId, leftMs: entry.expAt - Date.now() });
+        await refreshStreamMap(videoId);
+      } catch (_) { /* best-effort */ }
+      finally { _mapPending.delete('swr:' + videoId); }
+    })());
   }
   // verify=true のときだけ egress 実測＆ピン修復（ホットパス初手は軽量を優先。
   // 実測自体は watch 応答時に並行済みのことが多く、その場合はここでも即時ヒット）
@@ -1046,14 +1112,49 @@ function parseCommentPage(res) {
         else if (it.commentThreadRenderer) { const c = parseCommentThread(it.commentThreadRenderer, entities); if (c && (c.text || c.author)) comments.push(c); }
         else if (it.commentRenderer) { const c = parseCommentThread({ comment: { commentRenderer: it.commentRenderer } }, entities); if (c && (c.text || c.author)) comments.push(c); }
         else if (it.continuationItemRenderer) {
-          const t = it.continuationItemRenderer.continuationEndpoint?.continuationCommand?.token
-            || deepFind(it.continuationItemRenderer, 'token', 1)?.[0];
-          if (t) continuation = t;
+          const t = normalizeContinuation(it.continuationItemRenderer.continuationEndpoint?.continuationCommand?.token
+            || deepFind(it.continuationItemRenderer, 'token', 1)?.[0]);
+          if (isPlausibleContinuation(t)) continuation = t;
         }
       }
     }
   }
   return { comments, continuation, count };
+}
+
+/**
+ * Continuation ユーティリティ — 「コメントの無限取得が 400 で止まる」バグの根治。
+ *
+ * 実測された失敗連鎖:
+ *   YouTube は一部の応答（特にコメント欄の継続トークン）で、トークンを
+ *   パーセントエンコード済み（末尾 `%3D%3D`）の文字列として返すことがある。
+ *   旧実装はそれをそのままクライアントへ返し、クライアントが encodeURIComponent で
+ *   もう一度エンコードするため回線上は `%253D%253D` になり、サーバーが受け取る
+ *   トークンは `...%3D%3D` という不正な base64 に化ける → YouTube が 400 を
+ *   返す → フロントが同じ壊れたトークンで 3 回リトライ → 全滅、という連鎖だった。
+ *
+ * 根治策（二重防御）:
+ *   - normalizeContinuation(): 受け取った側で % エンコードを安定するまで剥がす
+ *   - isPlausibleContinuation(): 明らかに不正な形のトークンを上流へ送らない
+ *   - parseCommentPage(): 応答内のトークンを正規化してから返す
+ *   - フロント側も 4xx で同じトークンのリトライをしない（別修正）
+ */
+function normalizeContinuation(raw) {
+  let t = String(raw ?? '').trim();
+  for (let i = 0; i < 3; i++) {
+    if (!/%[0-9A-Fa-f]{2}/.test(t)) break;
+    try {
+      const d = decodeURIComponent(t);
+      if (d === t) break;
+      t = d;
+    } catch (_) { break; }
+  }
+  return t.trim();
+}
+
+function isPlausibleContinuation(t) {
+  return typeof t === 'string' && t.length >= 32 && t.length <= 2048
+    && /^[A-Za-z0-9_\-]+=*$/.test(t);
 }
 
 /**
@@ -1072,9 +1173,12 @@ function parseCommentPage(res) {
  */
 async function comments(videoId, tokenIn) {
   return caches.api.wrap('c0:' + videoId, 5 * CACHE_MIN, async () => {
-    const visitorId = getVisitorIdFast(); // 高速化: 未取得なら並行取得し、今回のリクエストを待たせない
+    const visitorId = getVisitorIdFast(); // 高速化: 未取得なら並行取得し、今回のリクエストは待たせない
     const spanDone = logbus.span('comments', 'コメント取得', { v: videoId, tokenGiven: !!tokenIn });
-    let token = tokenIn && String(tokenIn).length > 20 ? String(tokenIn) : null;
+    // バグ根治: YouTube は継続トークンを % エンコード済みで返すことがあり、そのまま
+    // クライアント→サーバー→上流と回ると二重エンコードで 400 になる。受け取り側で剥がす。
+    const norm = normalizeContinuation(tokenIn);
+    let token = isPlausibleContinuation(norm) ? norm : null;
     let entryCount = '';
     if (!token) {
       const res = await callApi('next', { videoId, contentCheckOk: true }, CLIENTS.WEB, { visitorId });
@@ -1082,7 +1186,7 @@ async function comments(videoId, tokenIn) {
       for (const p of panels) {
         const r = p?.engagementPanelSectionListRenderer;
         if (r?.panelIdentifier === 'engagement-panel-comments-section') {
-          token = deepFind(r, 'continuationCommand', 4)?.map(x => x.token).find(Boolean) || null;
+          token = deepFind(r, 'continuationCommand', 4)?.map(x => x.token).map(normalizeContinuation).find(isPlausibleContinuation) || null;
         }
       }
       const hd = deepFind(res, 'commentsEntryPointHeaderRenderer', 1)?.[0];
@@ -1094,17 +1198,40 @@ async function comments(videoId, tokenIn) {
     }
     const page1 = await callApi('next', { continuation: token }, CLIENTS.WEB, { visitorId });
     const parsed = parseCommentPage(page1);
+    // ループ防御: 応答が入力トークンと同じ継続を指したら「次無し」と扱う
+    // （壊れたトークンで無限に同じページを叩く事故を構造的に不可能にする）
+    if (parsed.continuation && parsed.continuation === token) parsed.continuation = null;
     spanDone({ got: parsed.comments.length, count: parsed.count || entryCount });
     return { ...parsed, count: parsed.count || entryCount, disabled: false };
   });
 }
 
-async function commentsNext(continuation) {
-  return caches.api.wrap('cx:' + continuation, 5 * CACHE_MIN, async () => {
-    const visitorId = getVisitorIdFast(); // 高速化: 未取得なら並行取得し、今回のリクエストは待たせない
-    const res = await callApi('next', { continuation }, CLIENTS.WEB, { visitorId });
-    return parseCommentPage(res);
-  });
+async function commentsNext(continuationIn) {
+  const continuation = normalizeContinuation(continuationIn);
+  // 明らかに不正な形のトークンを上流へ送らない（無意味な 400 を生まない）
+  if (!isPlausibleContinuation(continuation)) {
+    logbus.warn('comments', '継続トークンが不正のため取得を停止', { len: String(continuationIn || '').length });
+    return { comments: [], continuation: null, ended: true };
+  }
+  try {
+    return await caches.api.wrap('cx:' + continuation, 5 * CACHE_MIN, async () => {
+      const visitorId = getVisitorIdFast(); // 高速化: 未取得なら並行取得し、今回のリクエストは待たせない
+      const res = await callApi('next', { continuation }, CLIENTS.WEB, { visitorId });
+      const parsed = parseCommentPage(res);
+      if (parsed.continuation && parsed.continuation === continuation) parsed.continuation = null;
+      return parsed;
+    });
+  } catch (e) {
+    // 4xx = この継続トークンは無効/失効（寿命はおよそ 1 時間）。エラーにせず
+    // 「終端」として返す: コメント欄は既に表示済みなので、失効した追加分で
+    // UI を赤くするより静かに止めるほうが本家同等の正しい挙動。
+    if (e && (e.status === 400 || e.status === 404)) {
+      logbus.debug('comments', '継続トークン失効 — 静かに終端扱い', { err: e.message });
+      caches.api.delete('cx:' + continuation);
+      return { comments: [], continuation: null, ended: true };
+    }
+    throw e;
+  }
 }
 
 /* ------------------------------------------------------------------ channel */

@@ -4,3 +4,4 @@ npm-debug.log*
 data/config.json
 # Go エッジのビルド成果物（各プラットフォームのビルド時に生成される）
 goedge/bin/
+data/mesh-registry.json

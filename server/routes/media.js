@@ -2,7 +2,7 @@
 /** Media relay routes (/api/stream, /api/hls, /api/hotstat, /api/thumb). */
 const express = require('express');
 const { request: undiciRequest } = require('undici');
-const { wrap, fetchStreamBytes, isGoogleVideo, pipeUpstream, _streamJobs, hlsPins } = require('./helpers');
+const { wrap, fetchStreamBytes, isGoogleVideo, pipeUpstream, _streamJobs, hlsPins, relayState } = require('./helpers');
 const { proxyManager } = require('../proxies');
 const { hotChunks } = require('../media');
 const { logbus } = require('../logbus');
@@ -27,10 +27,26 @@ router.get('/api/stream', wrap(async (req, res) => {
   const rm = rangeHdr ? /^bytes=(\d+)-(\d+)$/.exec(rangeHdr) : null;
   const dedupe = !rawRaw && !!rm && (Number(rm[2]) - Number(rm[1])) <= 8 * 1024 * 1024;
 
-  let attempt = 0;
+  /**
+   * 「放置すると動画が異常に遅い」バグの根治（リレー側の二重防御）:
+   * 旧実装は失敗時にいきなり refreshStreamMap（player 発行し直し = 数秒〜数十秒）
+   * に逃げていた。放置後は「ピン済み egress が死んでいる」だけのことが多く、
+   * 実際には ①別 egress への付け替え（数百ms）で復帰できる。そこで:
+   *   attempt 1: マップの URL + ピン済み egress（タイムアウトも 8 秒に短縮 — 旧 20 秒）
+   *   attempt 2: 別 egress（ピンが死んでいたら direct、direct が死んでいたら
+   *              googlevideo トンネル実測済みプロキシ）に付け替え
+   *   attempt 3: マップ自体を再発行（本当に URL が切れたときだけの最終手段）
+   * 各試行は独立なので、放置後の最初のセグメント要求も最悪 8 秒で次へ進む。
+   */
+  relayState.total += 1;
+  relayState.active += 1;
+  if (relayState.active > relayState.peak) relayState.peak = relayState.active;
+  res.on('close', () => { relayState.active = Math.max(0, relayState.active - 1); });
+
   let lastErr = null;
-  while (attempt < 2) {
-    attempt++;
+  let mapUrl = null, mapPin = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (res.headersSent) return;
     try {
       let url, proxyUrl;
       if (rawRaw) {
@@ -38,9 +54,18 @@ router.get('/api/stream', wrap(async (req, res) => {
         const p = req.query.p ? String(req.query.p) : null;
         // only accept proxies that are currently in our verified pool
         proxyUrl = p && proxyManager.pool.some(x => x.url === p) ? p : (hlsPins.get(v)?.proxyUrl || null);
+      } else if (attempt === 2 && mapUrl) {
+        // 別 egress へ付け替え（URL は流用 — googlevideo URL は egress をまたいで
+        // 有効なことが実測されており、pin が合えば 206 が返る）
+        url = mapUrl;
+        proxyUrl = mapPin
+          ? null // 死んだピンから direct へ
+          : (proxyManager.pickGv() || undefined);
+        if (proxyUrl === undefined) proxyUrl = mapPin; // トンネル候補も無ければ元ピンで最終確認
       } else {
-        // attempt 2 以降は egress 実測＆ピン修復つき（発行 egress が 403 の動画を救う）
-        ({ url, proxyUrl } = await it.getStreamUrl(v, itag, { verify: attempt > 1 }));
+        // attempt 3 は egress 実測＆ピン修復つきの再発行（発行 egress が 403 の動画を救う）
+        ({ url, proxyUrl } = await it.getStreamUrl(v, itag, { verify: attempt > 2 }));
+        mapUrl = url; mapPin = proxyUrl;
       }
       if (!url || !isGoogleVideo(url)) throw new Error('no stream');
       const headers = {
@@ -52,13 +77,14 @@ router.get('/api/stream', wrap(async (req, res) => {
       // 高速化: 直 egress でもリレー専用の keep-alive Agent を使い、
       // セグメント毎の TCP/TLS ハンドシェイクを排除する。
       const dispatcher = proxyManager.dispatcherForRelay(proxyUrl);
+      const t0 = Date.now();
       if (dedupe) {
         const key = v + '|' + itag + '|' + headers.Range;
         let job = _streamJobs.get(key);
         if (!job) {
-          job = fetchStreamBytes(url, headers, dispatcher).finally(() => _streamJobs.delete(key));
+          job = fetchStreamBytes(url, headers, dispatcher, { headersTimeout: attempt === 3 ? 12000 : 8000 }).finally(() => _streamJobs.delete(key));
           _streamJobs.set(key, job);
-          logbus.debug('stream', '上流フェッチ（並行リクエスト束ね）', { v, itag, range: headers.Range, via: proxyUrl ? 'proxy' : 'direct' });
+          logbus.debug('stream', '上流フェッチ（並行リクエスト束ね）', { v, itag, range: headers.Range, via: proxyUrl ? 'proxy' : 'direct', attempt });
         }
         const hit = await job;
         if (!hit) throw new Error('upstream');
@@ -71,15 +97,16 @@ router.get('/api/stream', wrap(async (req, res) => {
         res.end(hit.buf);
         return;
       }
-      logbus.debug('stream', '上流リレー', { v, itag, range: headers.Range || '(full)', via: proxyUrl ? 'proxy' : 'direct', raw: !!rawRaw });
-      await pipeUpstream(url, headers, req, res, { dispatcher });
+      logbus.debug('stream', '上流リレー', { v, itag, range: headers.Range || '(full)', via: proxyUrl ? 'proxy' : 'direct', raw: !!rawRaw, attempt });
+      await pipeUpstream(url, headers, req, res, { dispatcher, headersTimeout: attempt === 3 ? 12000 : 8000 });
       return;
     } catch (e) {
       lastErr = e;
       if (res.headersSent) return;
-      // URL probably expired -> rebuild the map once
-      if (!rawRaw) { try { await it.refreshStreamMap(v); } catch (_) {} }
-      else break;
+      if (rawRaw) break;
+      // attempt 2 へは URL を流用するので再発行はしない（速い復帰優先）。
+      // attempt 3 直前の 1 回だけマップを再発行する。
+      if (attempt === 2) { try { await it.refreshStreamMap(v); } catch (_) {} }
     }
   }
   if (!res.headersSent) res.status(502).json({ error: lastErr?.message || 'stream failed' });

@@ -13,15 +13,15 @@ const http = require('node:http');
 const assert = require('node:assert');
 const app = require('..');
 
-async function req(port, path, headers = {}) {
+async function req(port, path, headers = {}, method = 'GET', body = null) {
   return new Promise((resolve, reject) => {
-    const r = http.request({ host: '127.0.0.1', port, path, headers }, (res) => {
+    const r = http.request({ host: '127.0.0.1', port, path, headers, method }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks) }));
     });
     r.on('error', reject);
-    r.end();
+    r.end(body);
   });
 }
 
@@ -38,7 +38,33 @@ async function main() {
 
   // --- API surface
   const health = await req(port, '/api/health');
-  check('GET /api/health -> 200 ok', health.status === 200 && JSON.parse(health.body).ok === true);
+  const healthJson = JSON.parse(health.body);
+  check('GET /api/health -> 200 ok', health.status === 200 && healthJson.ok === true);
+  check('/api/health に CPU/メモリ/プロキシ/メッシュ/ティアが載る', !!(healthJson.cpu && healthJson.memory && healthJson.proxies && healthJson.mesh && healthJson.tier && healthJson.eventLoop));
+
+  const healthz = await req(port, '/healthz');
+  check('GET /healthz -> 200 {ok}', healthz.status === 200 && JSON.parse(healthz.body).ok === true);
+
+  const healthHtml = await req(port, '/health', { Accept: 'text/html' });
+  check('GET /health -> HTML ダッシュボード', healthHtml.status === 200 && healthHtml.body.toString().includes('Vandal instance health'));
+
+  const meshState = await req(port, '/api/mesh/state');
+  const meshJson = JSON.parse(meshState.body);
+  check('GET /api/mesh/state -> ティア/自己/ピア構造', meshState.status === 200 && !!(meshJson.tiers && meshJson.self && Array.isArray(meshJson.peers) && typeof meshJson.shareProxies === 'number'));
+
+  const settings0 = await req(port, '/api/settings');
+  const s0 = JSON.parse(settings0.body);
+  check('GET /api/settings -> mesh 設定が既定で有効', settings0.status === 200 && s0.meshEnabled === true && s0.meshPrivate === false && s0.meshDelegate === true);
+
+  const setPriv = await req(port, '/api/settings', { 'Content-Type': 'application/json' }, 'POST', JSON.stringify({ meshPrivate: true }));
+  check('POST /api/settings {meshPrivate} -> 永続化して mode:private', setPriv.status === 200 && JSON.parse(setPriv.body).mesh.mode === 'private');
+  await req(port, '/api/settings', { 'Content-Type': 'application/json' }, 'POST', JSON.stringify({ meshPrivate: false }));
+
+  const delegNoTok = await req(port, '/api/mesh/delegate/player', { 'Content-Type': 'application/json' }, 'POST', JSON.stringify({ videoId: 'dQw4w9WgXcQ' }));
+  check('POST delegate (トークン無し) -> 403 MESH_FORBIDDEN', delegNoTok.status === 403 && JSON.parse(delegNoTok.body).code === 'MESH_FORBIDDEN');
+
+  const delegBadTok = await req(port, '/api/mesh/delegate/player', { 'Content-Type': 'application/json', 'X-Vandal-Mesh': 'x' }, 'POST', JSON.stringify({ videoId: 'short' }));
+  check('POST delegate (不正トークン) -> 403', delegBadTok.status === 403);
 
   const home = await req(port, '/');
   check('GET / -> 200 Vandal SPA', home.status === 200 && home.body.toString().includes('Vandal'));
@@ -54,6 +80,15 @@ async function main() {
 
   const warmBad = await req(port, '/api/warm/xx');
   check('GET /api/warm bad id -> 400', warmBad.status === 400);
+
+  // --- コメント無限取得バグの回帰（ルートシャドウ + トークン正規化）
+  const cnextMissing = await req(port, '/api/comments/next');
+  check('/api/comments/next (c 無し) -> 400 c required（:id に捕捉されない）', cnextMissing.status === 400 && JSON.parse(cnextMissing.body).error === 'c required');
+  const cnextBad = await req(port, '/api/comments/next?c=tooshort');
+  check('/api/comments/next (不正トークン) -> 200 ended:true で静かに停止（400 ループ不再）', cnextBad.status === 200 && JSON.parse(cnextBad.body).ended === true);
+  // 二重 % エンコードされたトークン（実ログの %253D%253D 再現）も commentsNext の
+  // 正規化で有効な base64 に復元されるため、上流へ 400 を持ち込まない。
+  // （ネットワーク不要の検証: 不正形は ended:true で静かに停止することを上で確認済み）
 
   // --- HotChunks: full-file RAM serve (shorts instant path)
   const { hotChunks } = require('../server/media');

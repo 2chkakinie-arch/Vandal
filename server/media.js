@@ -54,6 +54,10 @@ class HotChunks {
     const entry = this.map.get(k);
     const fresh = entry && entry.exp >= Date.now() ? entry : null;
     if (!fresh) { if (entry) this.map.delete(k); return false; }
+    // 放置バグ対策（sliding TTL）: 見られている動画の先頭バッファは access のたびに
+    // 寿命を延長する。旧実装は 6 分で必ず失効し、「最初は速いのに放置して戻ると
+    // 遅い」の RAM 側の要因になっていた。アクティブな視聴中はずっと RAM 即応答。
+    fresh.exp = Date.now() + TTL;
     // 高速化: ファイル全体が RAM に載っている（ショート等の小動画）場合は
     // Range 無しのフル GET も含めて上流へ渡さず即完了させる
     // （Content-Length が正確に載るのでプログレッシブ再生も正しく終端判定できる）

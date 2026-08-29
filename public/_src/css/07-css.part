@@ -1,0 +1,104 @@
+/* ================================================================= INSTANCES
+ * インスタンスリスト — ティア表デザイン（S/A/B/C）。
+ * メッシュで自動集計された健全インスタンスを「ティア表みたいなデザイン」で見せる。
+ * Vandal Project — independent open project.
+ */
+.inst-page { padding: 26px 4px 60px; max-width: 1080px; margin: 0 auto; }
+.inst-hero-ic {
+  width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--accent-grad, linear-gradient(120deg, #ff2ec4, #ff5c33, #ffe600));
+  box-shadow: 0 6px 18px rgba(255, 92, 51, .28); flex: none;
+}
+.inst-hero-ic .ic { width: 28px; height: 28px; fill: #fff; }
+
+/* ---- self strip（このインスタンスの今） ---- */
+.inst-self-strip {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; margin: 18px 0 22px;
+  background:
+    linear-gradient(var(--bg-elev), var(--bg-elev)) padding-box,
+    linear-gradient(90deg, #ff2ec4, #ff5c33, #ffe600) border-box;
+  border: 1px solid transparent;
+}
+.iss-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.iss-name { font-weight: 700; font-size: 14.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.iss-sub { font-size: 12px; color: var(--text-3); margin-top: 3px; }
+.iss-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mode-pill {
+  font-size: 12px; font-weight: 700; border-radius: 999px; padding: 5px 12px;
+}
+.mode-pill.pub { background: rgba(124, 227, 139, .16); color: #1a7f37; }
+.mode-pill.priv { background: rgba(255, 209, 102, .18); color: #b45309; }
+html.dark .mode-pill.pub { color: #7ce38b; }
+html.dark .mode-pill.priv { color: #ffd166; }
+
+/* ---- tier table ---- */
+.tier-table { display: flex; flex-direction: column; gap: 12px; }
+.tier-row {
+  display: grid; grid-template-columns: 168px 1fr; gap: 12px; align-items: stretch;
+  border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
+}
+.tier-cell {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  padding: 18px 12px; background: var(--chip-bg);
+}
+.tier-desc { font-size: 11px; color: var(--text-3); text-align: center; line-height: 1.5; }
+.tier-cards { display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--bg-elev); }
+
+.tier-badge {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+  font-weight: 900; font-size: 15px; color: #0a0a0a; flex: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+}
+.tier-badge.big { width: 40px; height: 40px; font-size: 20px; border-radius: 12px; }
+.t-s { background: linear-gradient(135deg, #7ce38b, #2fbf5f); }
+.t-a { background: linear-gradient(135deg, #6ee7ff, #2a9df4); }
+.t-b { background: linear-gradient(135deg, #ffd166, #f59e0b); }
+.t-c { background: linear-gradient(135deg, #ffa199, #ff7b72); }
+
+/* ---- instance card ---- */
+.inst-card {
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  background: var(--bg); transition: border-color .15s, transform .15s;
+}
+.inst-card:hover { border-color: var(--hover-2); }
+.inst-card.self { border-color: rgba(255, 46, 196, .55); box-shadow: 0 0 0 1px rgba(255, 46, 196, .25); }
+.inst-card-top { display: flex; align-items: center; gap: 10px; }
+.inst-name { font-weight: 600; font-size: 13.5px; display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.inst-self-tag {
+  font-size: 10.5px; font-weight: 800; color: #fff; border-radius: 999px; padding: 2px 9px; flex: none;
+  background: linear-gradient(90deg, #ff2ec4, #ff5c33);
+}
+.inst-score { margin-left: auto; display: flex; align-items: center; gap: 7px; flex: none; }
+.inst-bar { width: 90px; height: 7px; border-radius: 4px; background: var(--chip-bg); overflow: hidden; display: inline-block; }
+.inst-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #ff2ec4, #ff5c33, #ffe600); }
+.inst-bar-num { font-size: 12px; font-weight: 700; color: var(--text-2); width: 26px; text-align: right; }
+.inst-url { font-size: 11.5px; color: var(--text-3); margin: 7px 0 0 40px; overflow-wrap: anywhere; }
+.inst-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 0 40px; }
+.ichip {
+  font-size: 11px; color: var(--text-3); background: var(--chip-bg);
+  border-radius: 999px; padding: 3px 9px; display: inline-flex; gap: 4px; align-items: center;
+}
+.ichip b { color: var(--text); font-weight: 700; }
+.ichip em { font-style: normal; color: #2fbf5f; font-weight: 700; font-size: 10px; }
+.ichip.ok { color: #1a7f37; font-weight: 700; }
+html.dark .ichip.ok { color: #7ce38b; }
+.ichip.warn { color: #b45309; font-weight: 700; }
+html.dark .ichip.warn { color: #ffd166; }
+
+.inst-empty { padding: 26px; color: var(--text-3); font-size: 13px; text-align: center; }
+.inst-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 22px; }
+.inst-roles { list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 12.5px; color: var(--text-2); line-height: 1.75; }
+.inst-roles b { color: var(--text); }
+.inst-roles li { padding-left: 16px; position: relative; }
+.inst-roles li::before { content: '▸'; position: absolute; left: 0; color: #ff5c33; }
+
+@media (max-width: 900px) {
+  .tier-row { grid-template-columns: 1fr; }
+  .tier-cell { flex-direction: row; padding: 10px 14px; }
+  .tier-desc { text-align: left; }
+  .tier-cards { padding: 8px; }
+  .inst-grid { grid-template-columns: 1fr; }
+  .inst-url, .inst-chips { margin-left: 0; }
+  .inst-score { display: none; }
+}
