@@ -141,6 +141,9 @@ class Mesh {
     this._maint = null;
     this._probe = null;
     this._connectTries = new Map(); // baseUrl -> attempts
+    this._delegateJobs = new Map(); // videoId -> in-flight delegate promise（重複委譲を1本に束ねる）
+    this._lastShareRev = -1;       // 最後に proxies を共有したプール世代（差分共有用）
+    this._lastShareTs = 0;
     this.capToken = require('node:crypto').randomBytes(12).toString('hex'); // delegate 認証（hello で共有）
     this._loadRegistry();
   }
@@ -356,9 +359,14 @@ class Mesh {
 
     // ゴシップ: 他ピアへ転送（ホップ数制限）。ソケット同一性で比較するので
     // 二重索引（ws:// と http:// の両キー）でも同じ線に返す自己エコーが起きない。
-    // knows を除いて帯域を節約。
+    // 高速化（重要）: 転送メッセージから proxies と cap は剥がす。
+    //  - proxies を乗せたまま 3 ホップ転送すると、1 回の 30 秒パルスが
+    //    ピア数²×40 件へ増幅され、各ノードが取り込み実測で CPU/帯域を食い潰して
+    //    いた（「共同機能を入れたら読み込みが激重」の第二要因）。
+    //    プロキシ共有は直結ピアとの hello だけで完結する。
+    //  - cap（委譲トークン）は直結ピアにのみ開示する。
     if (typeof msg.hops === 'number' && msg.hops < HOP_LIMIT) {
-      const fwd = { ...msg, knows: undefined, hops: msg.hops + 1 };
+      const fwd = { ...msg, knows: undefined, proxies: undefined, cap: undefined, hops: msg.hops + 1 };
       for (const [, q] of this.peers) if (q.ws !== ws) this._send(q.ws, fwd);
       const seen = new Set(this.peers.values().map((q) => q.ws));
       for (const [, o] of this.outgoing) if (o !== ws && !seen.has(o)) this._send(o, fwd);
@@ -446,6 +454,14 @@ class Mesh {
       proxyIssuers: this.pm.issuerCount(),
       upstreamOkRate: this.pm.okRate(),
     });
+    // 高速化（差分共有）: プールに変化がない限り proxies を乗せない。
+    // 旧実装は 30 秒ごとに全ピアへ 40 件を再送し続け、受信側も毎回取り込み
+    // 処理を起動していた。世代 (pm.version) が同じなら健康情報だけで十分。
+    const now = Date.now();
+    const poolChanged = this.pm.version() !== this._lastShareRev;
+    const shareDue = now - (this._lastShareTs || 0) > 180 * 1000; // 3 分に 1 回は鮮度再送
+    const includeProxies = poolChanged || shareDue;
+    if (includeProxies) { this._lastShareRev = this.pm.version(); this._lastShareTs = now; }
     const msg = {
       type: 'hello',
       v: 2,
@@ -453,9 +469,9 @@ class Mesh {
       name: this.isPrivate ? this.name + ' (private)' : this.name,
       private: this.isPrivate,
       hops: 0,
-      ts: Date.now(),
+      ts: now,
       cap: this.capToken, // 委譲 API の認証用（メッシュ参加者だけが WS 経由で知り得る）
-      proxies: this.pm.exportProxies(PROXY_SHARE_LIMIT),
+      proxies: includeProxies ? this.pm.exportProxies(PROXY_SHARE_LIMIT) : [],
       health: h,
       knows: this.isPrivate ? [] : [...this.registry.keys()].slice(0, 24),
     };
@@ -464,13 +480,14 @@ class Mesh {
 
   /* ------------------------------------------------------- 分業 (delegate) */
 
-  /** 委譲先に値する（S/A ティアの）生きているピアをスコア順で返す */
+  /** 委譲先に値する（S/A ティアの）生きているピアをスコア順で返す。
+   *  cap（委譲トークン）を持つピアのみ — 無いと委譲 API が 403 で必ず死ぬ。 */
   pickPeer({ minTier = 'A', exclude = [] } = {}) {
     if (!this.canDelegate) return null;
     const rank = { S: 3, A: 2, B: 1, C: 0 };
     const now = Date.now();
     const alive = [...this.peers.values()]
-      .filter((p) => p.url && p.health && now - p.ts < PEER_DEAD_MS && rank[p.tier] >= rank[minTier] && !exclude.includes(p.url))
+      .filter((p) => p.url && p.cap && p.health && now - p.ts < PEER_DEAD_MS && rank[p.tier] >= rank[minTier] && !exclude.includes(p.url))
       .sort((a, b) => (b.health.score || 0) - (a.health.score || 0));
     return alive[0] ? { url: alive[0].url, name: alive[0].name, health: alive[0].health, cap: alive[0].cap || '' } : null;
   }
@@ -489,10 +506,25 @@ class Mesh {
    * 上位ティアのピアへ player 発行（メタ取得）を委譲する。
    * 呼び出し側は Promise を並行走らせ、自前発行が失敗したときだけ結果を採用する
    * （成功時は 1ms も待たない = 遅くならない）。
+   * 高速化: 同じ動画の委譲が並行したら 1 本に束ねる（弱インスタンスが同時に
+   * 同じ動画を開いたとき、強ピアへ重複発行して互いに遅くするのを防ぐ）。
+   * 既定タイムアウトも 10s → 4.5s: 救済レースは「先に帰った方」を採用するので、
+   * 長く待つほどユーザーの初速を削ぐだけだった。
    */
-  delegatePlayer(videoId, { timeoutMs = 10000 } = {}) {
+  delegatePlayer(videoId, { timeoutMs = 4500 } = {}) {
+    if (!videoId) return Promise.resolve(null);
+    const inflight = this._delegateJobs.get(videoId);
+    if (inflight) return inflight;
+    const job = this._delegatePlayerNow(videoId, timeoutMs)
+      .catch(() => null)
+      .finally(() => { this._delegateJobs.delete(videoId); });
+    this._delegateJobs.set(videoId, job);
+    return job;
+  }
+
+  _delegatePlayerNow(videoId, timeoutMs) {
     const peer = this.pickPeer({ minTier: 'A' });
-    if (!peer || !videoId) return Promise.resolve(null);
+    if (!peer) return Promise.resolve(null);
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), timeoutMs);
     const t0 = Date.now();
@@ -508,7 +540,7 @@ class Mesh {
       const txt = await up.body.text();
       if (up.statusCode !== 200) throw new Error('delegate http ' + up.statusCode);
       const j = JSON.parse(txt);
-      if (!j?.ok || !j.player?.urlMap) throw new Error('delegate payload');
+      if (!j?.ok || !j.player?.__urlMap) throw new Error('delegate payload');
       logbus.info('mesh', 'メタ取得をピアへ委譲して成功', { peer: peer.url, v: videoId, ms: Date.now() - t0 });
       return j.player;
     }).catch((e) => {
@@ -532,7 +564,9 @@ class Mesh {
   /* ---------------------------------------------------------------- state */
 
   /** /api/mesh/state とインスタンスリストページ用の公開情報。
-   *  full=true はループバック（デプロイ者本人の /health 確認）など限られた呼び出しのみ。 */
+   *  full=true はループバック（デプロイ者本人の /health 確認）など限られた呼び出しのみ。
+   *  高速化: exportProxies（全件ソート）を毎回呼ばず shareCount() で済ませ、
+   *  roles() も 1 回だけ計算する（旧実装は毎ポーリングで 2 回計算していた）。 */
   state({ full = false } = {}) {
     const show = (u) => (u ? (full ? u : maskUrl(u)) : null);
     const now = Date.now();
@@ -565,6 +599,7 @@ class Mesh {
     list.sort((a, b) => (b.health?.score ?? 0) - (a.health?.score ?? 0));
     const tiers = { S: [], A: [], B: [], C: [] };
     for (const p of list) (tiers[p.tier] || tiers.C).push(p.url || p.name);
+    const roles = this.roles();
     return {
       enabled,
       active: this.isActive && enabled,
@@ -581,8 +616,8 @@ class Mesh {
       count: list.length,
       aliveCount: list.filter((p) => p.alive).length,
       healthyPeers: this.healthyPeerCount(),
-      shareProxies: this.pm.exportProxies(PROXY_SHARE_LIMIT).length,
-      delegate: { enabled: !!engineConfig.get('meshDelegate'), roles: { ...this.roles(), metaPeers: this.roles().metaPeers.map(maskUrl) } },
+      shareProxies: this.pm.shareCount(PROXY_SHARE_LIMIT),
+      delegate: { enabled: !!engineConfig.get('meshDelegate'), roles: { ...roles, metaPeers: roles.metaPeers.map(maskUrl) } },
     };
   }
 

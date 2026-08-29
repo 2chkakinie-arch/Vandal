@@ -122,7 +122,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 /* done callback to signal full load */
-console.log('%c Vandal %c 独立したオープンプロジェクト ', 'background:linear-gradient(90deg,#ff2ec4,#ff5c33,#ffe600);color:#0a0a0a;border-radius:4px;padding:2px 6px;font-weight:800', 'color:#888');
+console.log('%c Vandal %c 独立したオープンプロジェクト ', 'background:linear-gradient(90deg,#5b8dff,#2fd9ff);color:#071018;border-radius:4px;padding:2px 6px;font-weight:800', 'color:#888');
 render();
 
 })();

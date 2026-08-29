@@ -55,6 +55,13 @@ function serve(kind, req, res) {
   res.setHeader('Content-Type', TYPES[kind]);
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.setHeader('X-Source-Distributed', 'true');
+  // 高速化: ETag を返して再訪問は 304（body ゼロ）で即終わる。
+  // ブラウザの 1 時間キャッシュと違い、デプロイ直後の更新も指纹が変われば
+  // すぐ届く（max-age を伸ばすトレードオフなしで往復を削れる）。
+  const etag = 'W/"' + kind + '-' + buf.length.toString(16) + '-' +
+    require('node:crypto').createHash('sha1').update(buf).digest('base64url').slice(0, 16) + '"';
+  if (req.headers['if-none-match'] === etag) { res.status(304).end(); return; }
+  res.setHeader('ETag', etag);
   res.end(buf);
 }
 

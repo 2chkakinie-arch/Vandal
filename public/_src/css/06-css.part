@@ -3,10 +3,34 @@
    ===================================================================== */
 .set-page { max-width: 760px; margin: 0 auto; padding: 20px 16px 80px; display: flex; flex-direction: column; gap: 18px; }
 .set-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 4px 0; }
-.set-logo { width: 64px; height: auto; flex: none; filter: drop-shadow(0 4px 14px rgba(255,46,196,.35)); }
+.set-head .brand-mark { border-radius: 15px; flex: none; box-shadow: 0 6px 16px rgba(91,141,255,.28); }
 .set-head h1 { font-size: 26px; font-weight: 800; letter-spacing: -.3px; }
 .set-sub { color: var(--text-2); font-size: 13px; margin-top: 2px; }
 .set-ic { font-size: 19px; }
+
+/* ---- 管理者バッジ / 管理ロック（訪問者は読み取り専用） ---- */
+.adm-pill {
+  margin-left: auto; font-size: 11.5px; font-weight: 800; letter-spacing: .4px;
+  color: #071018; border-radius: 999px; padding: 5px 12px;
+  background: linear-gradient(90deg, #5b8dff, #2fd9ff);
+}
+.adm-area { margin-top: 16px; }
+.adm-lock {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 1px dashed var(--border); border-radius: 16px; padding: 14px 16px;
+  background: var(--chip-bg);
+}
+.adm-lock-ic { width: 26px; height: 26px; fill: var(--text-3); flex: none; }
+.adm-lock-t { font-size: 13.5px; font-weight: 700; }
+.adm-lock-s { font-size: 12px; color: var(--text-3); margin-top: 4px; line-height: 1.65; max-width: 480px; }
+.adm-lock-form { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.adm-lock-form input {
+  height: 40px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg-elev);
+  color: var(--text); padding: 0 14px; font-size: 13px; width: 200px; outline: none;
+  transition: border-color var(--dur);
+}
+.adm-lock-form input:focus { border-color: var(--focus); }
+@media (max-width: 640px) { .adm-lock-form { margin-left: 0; } .adm-lock-form input { width: 100%; } }
 
 .set-card {
   background: var(--bg-elev); border: 1px solid var(--border); border-radius: 20px;
@@ -21,7 +45,7 @@
   border: 1px solid transparent; display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
 }
 .set-btn:hover { background: var(--hover-2); }
-.set-btn.primary { background: var(--accent-grad); color: #fff; box-shadow: 0 4px 14px rgba(255, 46, 196, .3); }
+.set-btn.primary { background: var(--accent-grad); color: #fff; box-shadow: 0 4px 14px rgba(91, 141, 255, .3); }
 .set-btn.primary:hover { filter: brightness(1.06); }
 .set-btn.warn { background: rgba(245, 158, 11, .16); color: #d97706; }
 .set-btn.warn:hover { background: rgba(245, 158, 11, .26); }
@@ -42,8 +66,8 @@
    ドキュメントページ
    ===================================================================== */
 .doc-page { max-width: 960px; margin: 0 auto; padding: 28px 16px 80px; }
-.doc-hero { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 16px 20px; text-align: center; }
-.doc-logo { height: 72px; width: auto; filter: drop-shadow(0 6px 20px rgba(255, 46, 196, .38)); }
+.doc-hero { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 16px 20px; text-align: center; }
+.doc-hero .brand-mark { border-radius: 18px; box-shadow: 0 8px 24px rgba(91, 141, 255, .32); }
 .doc-tag { color: var(--text-2); font-size: 15px; letter-spacing: .2px; }
 .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
 .doc-card {
@@ -59,7 +83,7 @@
   line-height: 1.7; overflow-x: auto; margin: 6px 0 10px; white-space: pre;
 }
 .doc-note { font-size: 12px !important; color: var(--text-3) !important; }
-.doc-license { border-color: rgba(255, 46, 196, .4); background: linear-gradient(180deg, rgba(255, 46, 196, .06), transparent 60%), var(--bg-elev); grid-column: span 2; }
+.doc-license { border-color: rgba(91, 141, 255, .4); background: linear-gradient(180deg, rgba(91, 141, 255, .06), transparent 60%), var(--bg-elev); grid-column: span 2; }
 .doc-license strong { color: var(--text); font-weight: 700; }
 @media (max-width: 760px) {
   .doc-grid { grid-template-columns: 1fr; }

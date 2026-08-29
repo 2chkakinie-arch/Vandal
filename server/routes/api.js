@@ -13,9 +13,10 @@ const router = express.Router();
 // インスタンス協力メッシュの集計状況（インスタンスリスト / 共有プロキシ）。
 // URL は既定で仮名化表示（デプロイ者の URL をそのまま訪問者へ晒さない）。
 // ループバックからの ?full=1 のみ完全表示（デプロイ者自身の確認用）。
+// ※ trust proxy 環境下の req.ip は X-Forwarded-For で偽装可能なので、
+//   ソケットの実アドレスで判定する（強化）。
 router.get('/api/mesh/state', (req, res) => {
-  const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.ip || '');
-  const full = local && String(req.query.full || '') === '1';
+  const full = require('../admin').isLoopback(req) && String(req.query.full || '') === '1';
   res.json(mesh.state({ full }));
 });
 router.get('/api/proxies', (req, res) => res.json(proxyManager.status()));
@@ -157,17 +158,37 @@ router.get('/api/resolve/:target', wrap(async (req, res) => {
 
 /* ------------------------------------------------------- settings (settings.json 相当) */
 
-/** デプロイ後もコードを触らずに変えられる実行時設定。data/config.json に永続化される
- *  （= 「setting.json みたいなところからプライベートインスタンスに切り替え」の本体）。
- *  環境変数 VANDAL_MESH_PRIVATE=1 / VANDAL_MESH=0 も初期値として効く。 */
+/** デプロイ後もコードを触らずに変えられる実行時設定。data/config.json に永続化。
+ *
+ * 【所有権の修正】旧実装は POST が無認証で、**任意の訪問者**が
+ * meshPrivate（プライベート化）/ meshEnabled（メッシュ脱退）/ proxyMode='direct'
+ * （プロキシ全停止）などを書き換えられ、永続化されていた。インスタンスの
+ * 運用方針はデプロイ者のもの — 書き込みは adminGate（ループバック /
+ * VANDAL_ADMIN_TOKEN / 初回クラームトークン）で保護し、訪問者は読み取り専用。
+ * 環境変数 VANDAL_MESH_PRIVATE=1 / VANDAL_MESH=0 も引き続き初期値として効く。 */
+const adminGate = require('../admin');
+
 router.get('/api/settings', (req, res) => {
   const c = engineConfig.get();
   res.json({
     ...c,
-    mesh: mesh.state(),
+    admin: adminGate.isAdmin(req),          // このクライアントが設定を書けるか
+    adminStatus: adminGate.status(),        // 未クラーム / env 運用 / クラーム済み
+    mesh: {                                  // 軽量サマリ（旧: 全ピア一覧を毎回構築していた）
+      mode: mesh.isPrivate ? 'private' : 'public',
+      enabled: !!engineConfig.get('meshEnabled'),
+      aliveCount: mesh.peerCount(),
+      healthyPeers: mesh.healthyPeerCount(),
+      shareProxies: require('../proxies').proxyManager.shareCount(40),
+      selfUrl: mesh.selfUrl || null,
+    },
   });
 });
 router.post('/api/settings', wrap(async (req, res) => {
+  if (!adminGate.isAdmin(req)) {
+    res.status(403).json({ error: 'この設定を変更できるのはインスタンスの管理者だけです', code: 'ADMIN_REQUIRED' });
+    return;
+  }
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   // mesh 系の変更はメッシュへ即反映（private 化した瞬間から URL を外へ出さない）
   const out = engineConfig.set(body);
@@ -175,7 +196,25 @@ router.post('/api/settings', wrap(async (req, res) => {
     logbus.info('mesh', 'メッシュ設定を変更', { private: out.meshPrivate, enabled: out.meshEnabled });
     mesh.nudge?.();
   }
-  res.json({ ...out, mesh: mesh.state() });
+  res.json({ ...out, admin: true });
+}));
+
+/* ---------------------------------------------------- admin claim / unlock */
+
+/** 初回クラーム: まだ誰も管理していない場合のみトークンを発行（1 回限り）。
+ *  以降は POST /api/admin/verify でトークン照合（X-Vandal-Admin ヘッダ用）。 */
+router.post('/api/admin/claim', wrap(async (req, res) => {
+  const out = adminGate.claim();
+  if (out.ok) {
+    logbus.info('engine', '管理権が初期化されました（初回クラーム）');
+    res.json({ ok: true, token: out.token });
+    return;
+  }
+  res.status(409).json({ ok: false, error: out.reason === 'env' ? 'このインスタンスは VANDAL_ADMIN_TOKEN で運用されています' : '既に誰かが管理権を取得済みです', code: out.reason === 'env' ? 'ADMIN_ENV' : 'ADMIN_CLAIMED' });
+}));
+router.post('/api/admin/verify', wrap(async (req, res) => {
+  const token = String(req.body?.token || '');
+  res.json({ ok: adminGate.verify(token) });
 }));
 
 /* ------------------------------------------- mesh delegate（ピアからの作業委譲を受ける側） */

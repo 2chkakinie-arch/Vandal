@@ -52,6 +52,15 @@ const CERTIFY_TOP_N = 24;        // certify only the fastest N per round
 const CERTIFY_WIDTH = 4;         // 高速化: 認定の並列幅（旧2→4、L3 issuer 揃いが約2倍速い）
 const CERT_TTL = 2 * 3600 * 1000;
 const FAIL_EVICT = 3;
+// ---- メッシュ協力による「プール無限肥大化」対策（読み込みが遅くなった主因の根治）:
+// ピアからプロキシを共有してもらい続けるとプールは数百件へ膨らみ、旧実装は
+// refresh() ごとに「プール全件を同時再実測」してイベントループを詰まらせていた。
+// 上限を設け、再実測は上位のみ・分割で回す。
+const REVALIDATE_TOP = 30;       // refresh 時に再実測するのは上位30件まで
+const REVALIDATE_WIDTH = 15;     // 再実測の同時幅（全件一斉 → 15 本ずつ）
+const ADOPT_MIN_INTERVAL = 25 * 1000; // ピアからの取り込みレート制限
+const SAVE_MIN_INTERVAL = 20 * 1000;  // ディスク保存の間引き（書き込みストーム防止）
+const STALE_EVICT = 35 * 60 * 1000;   // 再実測対象外で長く使っていないものは退出
 
 // InnerTube ANDROID クライアント（認定用カナリア発行。innertube.js と値を同期）
 const CANARY_VIDEO = 'dQw4w9WgXcQ';
@@ -91,6 +100,10 @@ class ProxyManager {
     // メッシュの各インスタンスが別シャードを走査するので、集合としての発見速度が上がる）
     this.shard = this._shardOf(process.env.VANDAL_MESH_NAME || process.env.RENDER_EXTERNAL_URL || process.env.HOSTNAME || 'vandal');
     this.stats = { ok: 0, bad: 0, since: Date.now() }; // 直近の上流成否（health スコア用）
+    this._rev = 1;            // プール変更世代（メッシュ共有の差分検出に使う）
+    this._lastAdopt = 0;      // adoptProxies のレート制限
+    this._lastSave = 0;       // _saveDisk の間引き
+    this._adopting = null;    // 取り込み実行中 promise（同時多発を 1 本に束ねる）
     try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) { /* read-only fs */ }
     this._loadDisk();
     if (this.enabled) {
@@ -149,16 +162,26 @@ class ProxyManager {
     } catch (_) { /* no cache yet */ }
   }
 
-  _saveDisk() {
+  _saveDisk(force = false) {
+    const now = Date.now();
+    if (!force && now - this._lastSave < SAVE_MIN_INTERVAL) return; // 書き込みストーム対策（取り込みのたびに同期書き込みしていたのを間引き）
+    this._lastSave = now;
     try {
       fs.writeFileSync(CACHE_FILE, JSON.stringify({
-        savedAt: Date.now(),
+        savedAt: now,
         pool: this.pool.slice(0, 80),
         list: this.list.slice(0, 9000),
         scanCursor: this.scanCursor,
       }));
     } catch (_) { /* read-only fs (vercel) */ }
   }
+
+  /** プールの変更世代（メッシュが「共有すべき差分があるか」を O(1) で判定するため） */
+  version() { return this._rev; }
+  _touch() { this._rev = (this._rev + 1) >>> 0; }
+
+  /** プールの絶対上限（メッシュ取り込みで際限なく膨らませない） */
+  poolCap() { return Math.min(160, this.poolTarget() * 3 + 40); }
 
   /** 設定ページから変更可能なプール維持数（動的） */
   poolTarget() {
@@ -317,17 +340,33 @@ class ProxyManager {
     const spanDone = logbus.span('proxy', 'プール更新開始', { pool: this.pool.length });
     this.refreshing = (async () => {
       // 1) re-validate existing pool first (cheap, keeps the good cache warm)
+      //    高速化（重要）: 旧実装は「プール全件を Promise.all で一斉再実測」していた。
+      //    メッシュでプールが数百件に膨らむと、この一斉テストがイベントループと
+      //    ソケットを飽和させ、全リクエスト（ページ読み込み含む）が数十秒遅くなる
+      //    「共同機能を入れたら激重になった」本体だった。上位のみ・分割で再実測する。
       if (this.pool.length) {
         const spanRe = logbus.span('proxy', '既存プール再検証', { n: this.pool.length });
-        const checked = await Promise.all(this.pool.map(p => this._testOne(p.url)));
-        const live = new Map(checked.filter(Boolean).map(p => [p.url, p]));
-        const dead = this.pool.length - live.size;
-        // keep certification flags of survivors
+        const ranked = [...this.pool].sort((a, b) =>
+          ((b.issuerTs ? 2 : 0) + (b.gvOkTs ? 1 : 0)) - ((a.issuerTs ? 2 : 0) + (a.gvOkTs ? 1 : 0)) || a.latency - b.latency);
+        const targets = ranked.slice(0, REVALIDATE_TOP);
+        const live = new Map();
+        for (let i = 0; i < targets.length; i += REVALIDATE_WIDTH) {
+          const chunk = targets.slice(i, i + REVALIDATE_WIDTH);
+          const checked = await Promise.all(chunk.map(p => this._testOne(p.url)));
+          checked.forEach((r, j) => { if (r) live.set(chunk[j].url, r); });
+        }
+        const before = this.pool.length;
         this.pool = this.pool
-          .filter(p => live.has(p.url))
-          .map(p => ({ ...p, latency: live.get(p.url).latency, lastOk: live.get(p.url).lastOk, fails: 0 }))
-          .sort((a, b) => a.latency - b.latency);
-        spanRe({ alive: live.size, dead });
+          .filter(p => live.has(p.url) || targets.every(t => t.url !== p.url)) // 再実測したものは生存のみ
+          .map(p => live.has(p.url)
+            ? { ...p, latency: live.get(p.url).latency, lastOk: live.get(p.url).lastOk, fails: 0 }
+            : p);
+        // 再実測対象外で長期間使っていないもの（= メッシュ取り込みの古い在庫）は退出
+        const staleCut = Date.now() - STALE_EVICT;
+        this.pool = this.pool.filter(p => p.issuerTs || p.gvOkTs || !p.lastOk || p.lastOk > staleCut);
+        this.pool.sort((a, b) => a.latency - b.latency);
+        if (this.pool.length !== before) this._touch();
+        spanRe({ alive: live.size, dead: targets.length - live.size, evicted: before - this.pool.length });
       }
       // 2) top up from the lists if needed
       const POOL_SIZE = this.poolTarget();
@@ -369,6 +408,7 @@ class ProxyManager {
         this.pool = [...new Map(this.pool.map(p => [p.url, p])).values()]
           .sort((a, b) => a.latency - b.latency)
           .slice(0, Math.max(POOL_SIZE * 2, 40));
+        this._touch();
       }
       this.lastRefresh = Date.now();
       this._saveDisk();
@@ -378,6 +418,43 @@ class ProxyManager {
       return this.pool;
     })().finally(() => { this.refreshing = null; });
     return this.refreshing;
+  }
+
+  /**
+   * 高速化（救済レースの要）: player 発行が全滅した緊急ローテーションで使う軽量補充。
+   * 旧実装は refresh({force:true}) を await していた — プール全件の再実測 +
+   * 場合によっては水源リスト取得（最大12秒）までユーザーリクエストの中で待つ
+   * 仕組みで、メッシュでプールが肥大化してからは「1 本の動画の救済に 10 秒以上」
+   * が频発した。この関数は既存プールに触らず、未テストの候補だけを最大 n 本
+   * SCAN_WIDTH 幅で数ブロック実測して即返る（目安 1〜4 秒・最悪でも TEST_TIMEOUT）。
+   */
+  async quickTopUp(n = 24) {
+    if (!this.enabled) return this.pool;
+    try {
+      if (!this.list.length) {
+        const fresh = await this._fetchLists();
+        if (fresh.length) {
+          this.list = fresh;
+          this.scanCursor = Math.floor((this.shard / SHARDS) * this.list.length);
+        }
+      }
+      const known = new Set(this.pool.map(p => p.url));
+      const budget = Math.ceil(n / 0.35); // 通過率 ~35% を想定した試行本数
+      const batch = [];
+      while (batch.length < budget && this.scanCursor < this.list.length) {
+        const cand = 'http://' + this.list[this.scanCursor++];
+        if (!known.has(cand)) batch.push(cand);
+      }
+      if (this.scanCursor >= this.list.length) this.scanCursor = 0; // 一周したら先頭へ
+      for (let i = 0; i < batch.length && this.pool.length < this.poolCap(); i += SCAN_WIDTH) {
+        const chunk = batch.slice(i, i + SCAN_WIDTH);
+        const results = await Promise.all(chunk.map(u => this._testOne(u).catch(() => null)));
+        results.forEach((r) => { if (r && this.pool.length < this.poolCap()) this.pool.push(r); });
+      }
+      this._touch();
+      this._saveDisk();
+      return this.pool;
+    } catch (_) { return this.pool; }
   }
 
   /** Best-effort pick of a healthy proxy (round robin over the fastest few). */
@@ -452,6 +529,7 @@ class ProxyManager {
     if (p.fails >= FAIL_EVICT) {
       logbus.info('proxy', 'プールから除外', { url, latency: p.latency });
       this.pool = this.pool.filter(x => x.url !== url);
+      this._touch();
       const a = this.agents.get(url);
       if (a) { a.close?.().catch(() => {}); this.agents.delete(url); }
     }
@@ -483,9 +561,15 @@ class ProxyManager {
    * インスタンス協力メッシュ用: 自インスタンスが持つ「生きている」プロキシを
    * 他インスタンスへ共有する形に整えて返す（URL と実測メタのみ。資格情報は無い）。
    * issuer/gv 認定済みを優先し、遅延順に最大 N 件。
+   * 高速化: hello/state から高頻度で呼ばれるため 30 秒キャッシュ + プール世代
+   * キャッシュを挟み、毎回の全件ソートを廃止（肥大プールで CPU を食っていた）。
    */
   exportProxies(limit = 40) {
     const now = Date.now();
+    if (this._exportCache && this._exportCache.limit === limit
+      && this._exportCache.rev === this._rev && now - this._exportCache.ts < 30 * 1000) {
+      return this._exportCache.arr;
+    }
     const live = this.pool
       .filter(p => p.lastOk && now - p.lastOk < 10 * 60 * 1000)
       .map(p => ({
@@ -495,62 +579,94 @@ class ProxyManager {
         gv: !!(p.gvOkTs && now - p.gvOkTs < CERT_TTL),
       }))
       .sort((a, b) => (b.issuer - a.issuer) || (b.gv - a.gv) || (a.latency - b.latency));
-    return live.slice(0, limit);
+    const arr = live.slice(0, limit);
+    this._exportCache = { limit, rev: this._rev, ts: now, arr };
+    return arr;
+  }
+
+  /** 共有候補の件数だけ欲しいときの O(1) 近似（state() 用 — exportProxies を呼ばない） */
+  shareCount(limit = 40) {
+    if (this._exportCache && this._exportCache.limit === limit
+      && this._exportCache.rev === this._rev && Date.now() - this._exportCache.ts < 30 * 1000) {
+      return this._exportCache.arr.length;
+    }
+    const now = Date.now();
+    let n = 0;
+    for (const p of this.pool) { if (p.lastOk && now - p.lastOk < 10 * 60 * 1000) { n++; if (n >= limit) return limit; } }
+    return n;
   }
 
   /**
    * インスタンス協力メッシュ用: ピアから受信したプロキシをプールへ取り込む。
-   *  - issuer/gv 認定済み（ピアが実測済み）は信頼して即採用
-   *  - それ以外は軽い実測（_testOne）に通ったものだけ採用（毒入れ対策）
-   *  - 上限・重複排除でメモリ/攻撃面を守る
+   *
+   * 高速化・安定化（旧実装の問題点）:
+   *  - 30 秒ごとの hello（＋最大3ホップのゴシップ転送）ごとに最大 180 件を
+   *    取り込み、プールが数百件へ際限なく膨らんだ → refresh() の全件一斉再実測で
+   *    イベントループが固まり、全ページの読み込みが激重になった。
+   *  - 未認定 60 件 × 3.8 秒の実測を hello のたびに走らせ、帯域と CPU を食い潰した。
+   *  対策: 取り込みはレート制限（25 秒に 1 回・並行呼び出しは 1 本に束ねる）、
+   *  認定済みのみ即採用（上限あり）、未認定はプールが減っているときだけ軽く実測。
    */
-  async adoptProxies(list = []) {
-    if (!this.enabled || !Array.isArray(list) || !list.length) return 0;
+  adoptProxies(list = []) {
+    if (!this.enabled || !Array.isArray(list) || !list.length) return Promise.resolve(0);
+    const now = Date.now();
+    if (now - this._lastAdopt < ADOPT_MIN_INTERVAL) return Promise.resolve(0); // レート制限
+    if (this._adopting) return this._adopting;                                // 同時多発を 1 本へ
+    this._lastAdopt = now;
+    this._adopting = this._adoptProxiesNow(list)
+      .catch(() => 0)
+      .finally(() => { this._adopting = null; });
+    return this._adopting;
+  }
+
+  async _adoptProxiesNow(list = []) {
+    const cap = this.poolCap();
+    if (this.pool.length >= cap) return 0;
     const known = new Set(this.pool.map(p => p.url));
     const incoming = [];
     for (const p of list) {
       if (!p || typeof p.url !== 'string') continue;
-      const url = p.url;
-      if (known.has(url)) continue;
-      if (!/^https?:\/\/\d{1,3}(\.\d{1,3}){3}:\d{2,5}$/.test(url)) continue;
-      known.add(url);
+      if (known.has(p.url)) continue;
+      if (!/^https?:\/\/\d{1,3}(\.\d{1,3}){3}:\d{2,5}$/.test(p.url)) continue;
+      known.add(p.url);
       incoming.push(p);
     }
     if (!incoming.length) return 0;
 
-    const certed = incoming.filter(p => p.issuer || p.gv);
-    const rest = incoming.filter(p => !(p.issuer || p.gv));
-
+    const certed = incoming.filter(p => p.issuer); // issuer 認定（YouTube非BAN実測済み）のみ即採用
     let added = 0;
-    // 認定済みは即採用（ピア実測を信頼。過剰分は切り捨て）
-    for (const p of certed.slice(0, 120)) {
+    const room = cap - this.pool.length;
+    for (const p of certed.slice(0, room)) {
       this.pool.push({
         url: p.url,
         latency: Math.min(Math.max(Number(p.latency) || 1500, 50), 10000),
         fails: 0,
         lastOk: Date.now(),
         gvOkTs: p.gv ? Date.now() : 0,
-        issuerTs: p.issuer ? Date.now() : 0,
+        issuerTs: Date.now(),
       });
       added++;
     }
-    // 非認定は軽実測（並列幅は控えめ。メッシュ帯域を守る）
-    const unver = rest.slice(0, 60);
-    for (let i = 0; i < unver.length; i += 4) {
-      const chunk = unver.slice(i, i + 4);
-      const res = await Promise.all(chunk.map(p => this._testOne(p.url).catch(() => null)));
-      res.forEach((r) => {
-        if (!r) return;
-        if (this.pool.some(x => x.url === r.url)) return;
-        this.pool.push(r);
-        added++;
-      });
+    // 未認定は「プールが目標を下回っている」ときだけ少量実測して補う
+    if (this.pool.length < this.poolTarget()) {
+      const rest = incoming.filter(p => !p.issuer).slice(0, 12);
+      for (let i = 0; i < rest.length; i += 6) {
+        const chunk = rest.slice(i, i + 6);
+        const res = await Promise.all(chunk.map(p => this._testOne(p.url).catch(() => null)));
+        for (const r of res) {
+          if (!r || this.pool.length >= cap || this.pool.some(x => x.url === r.url)) continue;
+          this.pool.push(r);
+          added++;
+        }
+      }
     }
     if (added) {
       this.pool = [...new Map(this.pool.map(p => [p.url, p])).values()]
-        .sort((a, b) => a.latency - b.latency);
+        .sort((a, b) => a.latency - b.latency)
+        .slice(0, cap);
+      this._touch();
       this._saveDisk();
-      logbus.info('mesh', 'ピアからプロキシを採用', { added, total: this.pool.length });
+      logbus.info('mesh', 'ピアからプロキシを採用', { added, total: this.pool.length, cap });
     }
     return added;
   }

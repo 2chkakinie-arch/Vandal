@@ -42,12 +42,24 @@ class LogBus {
     if (LEVELS[level] < LEVELS[this.minLevel]) return null;
     const ev = { seq: ++this.seq, ts: now, level, ch, msg: String(msg).slice(0, 400), data: undefined };
     // data must survive JSON — and never leak full URLs (privacy: strip nothing sensitive here,
-    // callers pass timing/scalar objects)
+    // callers pass timing/scalar objects).
+    // 高速化: ほぼ全ての呼び出しは「プリミティブだけの浅いオブジェクト」なので
+    // JSON 往復なしの浅いコピーで済ませる（トレース量が多い時に効く）。
     if (data !== undefined) {
-      try {
-        ev.data = JSON.parse(JSON.stringify(data));
-        if (JSON.stringify(ev.data).length > 2000) ev.data = { note: 'truncated' };
-      } catch (_) { ev.data = { note: 'unserializable' }; }
+      let shallow = true;
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        for (const v of Object.values(data)) {
+          if (v !== null && typeof v === 'object') { shallow = false; break; }
+        }
+      } else shallow = false;
+      if (shallow) {
+        ev.data = { ...data };
+      } else {
+        try {
+          ev.data = JSON.parse(JSON.stringify(data));
+          if (JSON.stringify(ev.data).length > 2000) ev.data = { note: 'truncated' };
+        } catch (_) { ev.data = { note: 'unserializable' }; }
+      }
     }
     this.buf.push(ev);
     if (this.buf.length > this.max) this.buf.splice(0, this.buf.length - this.max);

@@ -199,7 +199,7 @@ function scGet(key) {
 function scSet(key, d, ttl) {
   try { sessionStorage.setItem('vandal:sc:' + key, JSON.stringify({ d, exp: Date.now() + ttl })); } catch (_) { /* quota */ }
 }
-async function api(path, { ttl = 5 * 60e3, method = 'GET', body, persist = 0 } = {}) {
+async function api(path, { ttl = 5 * 60e3, method = 'GET', body, persist = 0, headers } = {}) {
   const key = method + ':' + path + (body ? ':' + body : '');
   if (method === 'GET') {
     const hit = mem.get(key);
@@ -213,7 +213,7 @@ async function api(path, { ttl = 5 * 60e3, method = 'GET', body, persist = 0 } =
   if (inflight) return inflight;
   const p = fetch(path, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(headers || {}) },
     body,
   }).then(async (res) => {
     const j = await res.json().catch(() => ({}));
@@ -230,6 +230,41 @@ async function api(path, { ttl = 5 * 60e3, method = 'GET', body, persist = 0 } =
 }
 api._inflight = new Map();
 api.invalidate = (prefix) => { for (const k of mem.keys()) if (String(k).includes(prefix)) mem.delete(k); };
+
+/* ---- 管理者ヘッダ（インスタンス設定の書き込みは管理者のみになったため） ---- */
+const Admin = {
+  get token() { try { return localStorage.getItem('vandal:admin-token') || ''; } catch (_) { return ''; } },
+  set token(v) { try { v ? localStorage.setItem('vandal:admin-token', v) : localStorage.removeItem('vandal:admin-token'); } catch (_) {} },
+  headers() { return this.token ? { 'X-Vandal-Admin': this.token } : {}; },
+};
+window.Admin = Admin;
+
+/* ---- 遅延ローダ: hls.min.js（617KB）はライブ再生のときだけ読み込む ---- */
+let _hlsP = null;
+function loadHls() {
+  if (window.Hls) return Promise.resolve(window.Hls);
+  if (_hlsP) return _hlsP;
+  _hlsP = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/hls.min.js';
+    s.onload = () => resolve(window.Hls);
+    s.onerror = () => { _hlsP = null; reject(new Error('hls load failed')); };
+    document.head.appendChild(s);
+  });
+  return _hlsP;
+}
+
+/* ---- ブランドロゴ（インライン SVG — 追加リクエストなし） ---- */
+const LOGO = (() => {
+  const id = 'lg' + Math.random().toString(36).slice(2, 7);
+  return (size = 40) => `<svg class="brand-mark" width="${size}" height="${size}" viewBox="0 0 132 132" aria-hidden="true">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7382ff"/><stop offset=".55" stop-color="#5b8dff"/><stop offset="1" stop-color="#2fd9ff"/>
+    </linearGradient></defs>
+    <rect x="4" y="4" width="124" height="124" rx="30" fill="url(#${id})"/>
+    <path d="M50 38 L98 66 L50 94 Z" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+  </svg>`;
+})();
 
 /* infinite scroll helper */
 function lazySentinel(container, onFire) {
