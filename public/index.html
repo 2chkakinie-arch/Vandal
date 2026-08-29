@@ -30,7 +30,18 @@
       <svg viewBox="0 0 24 24" class="ic"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></svg>
     </button>
     <a class="logo" href="#/" aria-label="Vandal ホーム">
-      <img src="/logo.svg" alt="Vandal" class="logo-img">
+      <svg class="logo-mark" viewBox="0 0 132 132" aria-hidden="true">
+        <defs>
+          <linearGradient id="lgM" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#7382ff"/>
+            <stop offset=".55" stop-color="#5b8dff"/>
+            <stop offset="1" stop-color="#2fd9ff"/>
+          </linearGradient>
+        </defs>
+        <rect x="4" y="4" width="124" height="124" rx="30" fill="url(#lgM)"/>
+        <path d="M50 38 L98 66 L50 94 Z" fill="#fff" stroke="#fff" stroke-width="16" stroke-linejoin="round"/>
+      </svg>
+      <span class="logo-word">Vandal</span>
     </a>
   </div>
   <div class="mh-center">
@@ -110,7 +121,8 @@
 </nav>
 
 <div id="toast" class="hidden"></div>
-<script src="/vendor/hls.min.js" defer></script>
+<!-- 高速化: hls.min.js（617KB）はライブ視聴の時だけ初回ロードする。
+     全ページで defer 読み込みしていた頃より初回表示が大幅に速くなる。 -->
 <script src="/app.js" defer></script>
 </body>
 </html>

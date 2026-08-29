@@ -82,130 +82,213 @@ function renderSubscriptions() {
 function renderSettings() {
   setActiveNav('settings');
 
-  app.innerHTML = `
-  <div class="set-page">
-    <div class="set-head">
-      <img src="/logo.svg" alt="" class="set-logo">
+  /* ---- 状態取得（管理者ヘッダ同梱 — サーバーが書き込み権を判定する） ---- */
+  const loadSettings = () => api('/api/settings', { ttl: 0, headers: Admin.headers() }).catch(() => null);
+
+  function meshStatusLine(c) {
+    const m = c?.mesh || {};
+    return `ピア <b>${m.aliveCount ?? 0}</b> 台が起動中（健全 ${m.healthyPeers ?? 0}）・共有プロキシ <b>${m.shareProxies ?? 0}</b> 本・モード <b>${m.mode === 'private' ? 'プライベート' : '共同参加'}</b>${m.selfUrl ? ` ・自 URL <code>${esc(m.selfUrl)}</code>` : ''}`;
+  }
+
+  /** 管理ロック（訪問者には読み取り専用 — インスタンスはデプロイ者のもの） */
+  function adminLockHtml(c) {
+    const st = c?.adminStatus || {};
+    if (st.viaEnv) {
+      return `
+      <div class="adm-lock">
+        <svg viewBox="0 0 24 24" class="adm-lock-ic"><path d="M17 9V7a5 5 0 0 0-9.9-1h2.1a3 3 0 0 1 5.8 1v2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm-5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
+        <div>
+          <div class="adm-lock-t">このインスタンスはトークン運用です</div>
+          <div class="adm-lock-s">設定の変更にはデプロイ時の環境変数 <code>VANDAL_ADMIN_TOKEN</code> を入力してロックを解除してください。</div>
+        </div>
+        <div class="adm-lock-form">
+          <input type="password" id="adm-token" placeholder="管理トークン" autocomplete="off">
+          <button class="set-btn primary" id="adm-unlock">解除</button>
+        </div>
+      </div>`;
+    }
+    if (st.claimed) {
+      return `
+      <div class="adm-lock">
+        <svg viewBox="0 0 24 24" class="adm-lock-ic"><path d="M17 9V7a5 5 0 0 0-9.9-1h2.1a3 3 0 0 1 5.8 1v2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm-5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
+        <div>
+          <div class="adm-lock-t">管理者が設定済みです</div>
+          <div class="adm-lock-s">インスタンスの運用設定は管理者だけが変更できます。管理トークンを持っている場合は入力してロックを解除してください。</div>
+        </div>
+        <div class="adm-lock-form">
+          <input type="password" id="adm-token" placeholder="管理トークン" autocomplete="off">
+          <button class="set-btn primary" id="adm-unlock">解除</button>
+        </div>
+      </div>`;
+    }
+    return `
+    <div class="adm-lock">
+      <svg viewBox="0 0 24 24" class="adm-lock-ic"><path d="M17 9V7a5 5 0 0 0-9.9-1h2.1a3 3 0 0 1 5.8 1v2H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2zm-5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
       <div>
-        <h1>設定</h1>
-        <p class="set-sub">外観とデータの一般的な設定</p>
+        <div class="adm-lock-t">まだ管理者が設定されていません</div>
+        <div class="adm-lock-s">デプロイした人が最初に「管理権を取得」で所有権を確定できます（1 回だけ発行）。サーバーをローカルで開いている場合は自動的に管理者扱いです。</div>
       </div>
-    </div>
-
-    <section class="set-card">
-      <h2><span class="set-ic">🎨</span>外観</h2>
-      <div class="set-actions">
-        <div class="seg seg-sm" id="cfg-theme" style="max-width:340px">
-          <button data-v="light">ライト</button>
-          <button data-v="dark">ダーク</button>
-        </div>
+      <div class="adm-lock-form">
+        <button class="set-btn primary" id="adm-claim">管理権を取得</button>
       </div>
-    </section>
+    </div>`;
+  }
 
-    <section class="set-card">
-      <h2><span class="set-ic">🌐</span>インスタンス協力メッシュ</h2>
-      <p class="set-note">デプロイされた Vandal は設定不要で自動的にメッシュへ参加し、生きているプロキシと健全性を共有します。プライベートモードでは自 URL を一切共有せず匿名で参加します（内部の共同作業は継続）。参加状況は <a href="#/instances">インスタンス</a> ページで確認できます。</p>
-      <div class="set-actions" style="flex-direction:column;align-items:flex-start;gap:14px">
+  function wireAdminLock(root, reload) {
+    $('#adm-claim', root)?.addEventListener('click', async () => {
+      try {
+        const r = await api('/api/admin/claim', { method: 'POST', ttl: 0 });
+        if (r?.token) { Admin.token = r.token; toast('管理権を取得しました'); reload(); return; }
+        toast('取得できませんでした');
+      } catch (e) { toast(e?.payload?.code === 'ADMIN_ENV' ? 'このインスタンスはトークン運用です' : '取得できませんでした'); }
+    });
+    $('#adm-unlock', root)?.addEventListener('click', async () => {
+      const t = $('#adm-token', root)?.value.trim();
+      if (!t) { toast('トークンを入力してください'); return; }
+      Admin.token = t;
+      const c = await loadSettings();
+      if (c?.admin) { toast('ロックを解除しました'); reload(); }
+      else { Admin.token = ''; toast('トークンが正しくありません'); }
+    });
+    $('#adm-token', root)?.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#adm-unlock', root)?.click(); });
+  }
+
+  function render(c) {
+    const isAdmin = !!c?.admin;
+
+    app.innerHTML = `
+    <div class="set-page">
+      <div class="set-head">
+        ${LOGO(56)}
         <div>
-          <div class="set-note" style="margin:0 0 6px"><b>参加モード</b></div>
-          <div class="seg seg-sm" id="cfg-mesh-mode" style="max-width:420px">
-            <button data-v="public">共同参加（既定）</button>
-            <button data-v="private">プライベート</button>
+          <h1>設定</h1>
+          <p class="set-sub">外観とデータの一般的な設定${isAdmin ? '' : ' ・ インスタンス運用設定は管理者のみ'}</p>
+        </div>
+        ${isAdmin ? '<span class="adm-pill">管理者</span>' : ''}
+      </div>
+
+      <section class="set-card">
+        <h2><span class="set-ic">🎨</span>外観</h2>
+        <div class="set-actions">
+          <div class="seg seg-sm" id="cfg-theme" style="max-width:340px">
+            <button data-v="light">ライト</button>
+            <button data-v="dark">ダーク</button>
           </div>
         </div>
-        <div>
-          <div class="set-note" style="margin:0 0 6px"><b>メッシュ参加</b>（無効で完全単独運用）</div>
-          <div class="seg seg-sm" id="cfg-mesh-enabled" style="max-width:420px">
-            <button data-v="on">参加する</button>
-            <button data-v="off">無効にする</button>
-          </div>
-        </div>
+      </section>
+
+      <section class="set-card">
+        <h2><span class="set-ic">🌐</span>インスタンス協力メッシュ</h2>
+        <p class="set-note">デプロイされた Vandal は設定不要で自動的にメッシュへ参加し、生きているプロキシと健全性を共有します。訪問者には各インスタンスの URL は省略表記でしか表示されません。運用モードの変更（プライベート化・脱退）は管理者のみ可能です。</p>
         <div class="set-note" id="mesh-live-status">メッシュ状態を取得中…</div>
-      </div>
-    </section>
+        ${c === null ? `<div class="adm-area"><div class="mini-spin"></div></div>` : isAdmin ? `
+        <div class="set-actions" style="flex-direction:column;align-items:flex-start;gap:14px;margin-top:16px">
+          <div>
+            <div class="set-note" style="margin:0 0 6px"><b>参加モード</b>（プライベート = 自 URL を共有せず匿名参加）</div>
+            <div class="seg seg-sm" id="cfg-mesh-mode" style="max-width:420px">
+              <button data-v="public">共同参加（既定）</button>
+              <button data-v="private">プライベート</button>
+            </div>
+          </div>
+          <div>
+            <div class="set-note" style="margin:0 0 6px"><b>メッシュ参加</b>（無効で完全単独運用）</div>
+            <div class="seg seg-sm" id="cfg-mesh-enabled" style="max-width:420px">
+              <button data-v="on">参加する</button>
+              <button data-v="off">無効にする</button>
+            </div>
+          </div>
+        </div>` : `
+        <div class="adm-area">${adminLockHtml(c)}</div>`}
+      </section>
 
-    <section class="set-card">
-      <h2><span class="set-ic">🧹</span>データ管理</h2>
-      <div class="set-actions">
-        <button class="set-btn" id="s-clear-history">履歴を全消去</button>
-        <button class="set-btn" id="s-clear-cache">セッションキャッシュを消去</button>
-        <button class="set-btn warn" id="s-clear-all">すべてのローカルデータを消去</button>
-      </div>
-      <p class="set-note">履歴・高評価・保存・登録チャンネルは、この端末のブラウザ内にのみ保存されます。</p>
-    </section>
+      <section class="set-card">
+        <h2><span class="set-ic">🧹</span>データ管理</h2>
+        <div class="set-actions">
+          <button class="set-btn" id="s-clear-history">履歴を全消去</button>
+          <button class="set-btn" id="s-clear-cache">セッションキャッシュを消去</button>
+          <button class="set-btn warn" id="s-clear-all">すべてのローカルデータを消去</button>
+        </div>
+        <p class="set-note">履歴・高評価・保存・登録チャンネルは、この端末のブラウザ内にのみ保存されます。</p>
+      </section>
 
-    <section class="set-card">
-      <h2><span class="set-ic">ℹ️</span>Vandal について</h2>
-      <p class="set-about">Vandal — 最速の動画体験を目指す、完全に独立したオープンプロジェクト。インスタンス協力メッシュで、起動中の各サイトの URL と生きているプロキシをサーバー側で自動集計・共有します。</p>
-      <div class="set-actions">
-        <a class="set-btn" href="#/doc">詳細・ドキュメントを見る</a>
-      </div>
-    </section>
-  </div>`;
+      <section class="set-card">
+        <h2><span class="set-ic">ℹ️</span>Vandal について</h2>
+        <p class="set-about">Vandal — 最速の動画体験を目指す、完全に独立したオープンプロジェクト。インスタンス協力メッシュで、起動中の各サイトが生きているプロキシと健全性を自動共有・分業します。</p>
+        <div class="set-actions">
+          <a class="set-btn" href="#/doc">詳細・ドキュメントを見る</a>
+        </div>
+      </section>
+    </div>`;
 
-  const seg = $('#cfg-theme');
-  const syncSeg = () => seg.querySelectorAll('button').forEach((b) =>
-    b.classList.toggle('sel', (b.dataset.v === 'dark') === document.documentElement.classList.contains('dark')));
-  syncSeg();
-  seg.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-v]');
-    if (!b) return;
-    applyTheme(b.dataset.v === 'dark');
+    const seg = $('#cfg-theme');
+    const syncSeg = () => seg.querySelectorAll('button').forEach((b) =>
+      b.classList.toggle('sel', (b.dataset.v === 'dark') === document.documentElement.classList.contains('dark')));
     syncSeg();
-  });
+    seg.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      applyTheme(b.dataset.v === 'dark');
+      syncSeg();
+    });
 
-  /* ---- mesh settings（settings.json 相当。data/config.json に永続化される） ---- */
-  const meshModeSeg = $('#cfg-mesh-mode');
-  const meshEnabledSeg = $('#cfg-mesh-enabled');
-  let meshCfg = null;
-  const syncMeshSegs = () => {
-    if (!meshCfg) return;
-    meshModeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'private') === !!meshCfg.meshPrivate));
-    meshEnabledSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'on') === !!meshCfg.meshEnabled));
-  };
-  api('/api/settings', { ttl: 5 * 1000 }).then((c) => {
-    meshCfg = c;
-    syncMeshSegs();
-    const st = c.mesh || {};
-    $('#mesh-live-status').innerHTML = `ピア <b>${st.aliveCount ?? 0}</b> 台が起動中（健全 ${st.healthyPeers ?? 0}）・共有プロキシ <b>${st.shareProxies ?? 0}</b> 本・モード <b>${st.mode === 'private' ? 'プライベート' : '共同参加'}</b>${st.self?.url ? ` ・自 URL <code>${esc(st.self.url)}</code>` : ''}`;
-  }).catch(() => { $('#mesh-live-status').textContent = 'メッシュ状態を取得できませんでした。'; });
-  meshModeSeg.addEventListener('click', async (e) => {
-    const b = e.target.closest('button[data-v]');
-    if (!b || !meshCfg) return;
-    try {
-      meshCfg = await api('/api/settings', { method: 'POST', body: JSON.stringify({ meshPrivate: b.dataset.v === 'private' }), ttl: 0 });
+    $('#mesh-live-status').innerHTML = c === null ? 'メッシュ状態を取得中…' : (c ? meshStatusLine(c) : 'メッシュ状態を取得できませんでした。');
+    wireAdminLock(app, () => renderSettings());
+
+    /* ---- 管理者: メッシュ設定（data/config.json へ永続化） ---- */
+    if (isAdmin) {
+      const meshModeSeg = $('#cfg-mesh-mode');
+      const meshEnabledSeg = $('#cfg-mesh-enabled');
+      const syncMeshSegs = () => {
+        meshModeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'private') === !!c.meshPrivate));
+        meshEnabledSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'on') === !!c.meshEnabled));
+      };
       syncMeshSegs();
-      toast(b.dataset.v === 'private' ? 'プライベートインスタンスに切り替えました' : '共同参加モードに切り替えました');
-    } catch (_) { toast('変更に失敗しました'); }
-  });
-  meshEnabledSeg.addEventListener('click', async (e) => {
-    const b = e.target.closest('button[data-v]');
-    if (!b || !meshCfg) return;
-    try {
-      meshCfg = await api('/api/settings', { method: 'POST', body: JSON.stringify({ meshEnabled: b.dataset.v === 'on' }), ttl: 0 });
-      syncMeshSegs();
-      toast(b.dataset.v === 'on' ? 'メッシュに参加しました' : 'メッシュを無効化しました（単独運用）');
-    } catch (_) { toast('変更に失敗しました'); }
-  });
+      const saveMesh = async (patch, okMsg) => {
+        try {
+          const out = await api('/api/settings', { method: 'POST', body: JSON.stringify(patch), ttl: 0, headers: Admin.headers() });
+          Object.assign(c, out);
+          syncMeshSegs();
+          $('#mesh-live-status').innerHTML = meshStatusLine(out);
+          toast(okMsg);
+        } catch (e) {
+          if (e?.status === 403) { toast('管理者のみ変更できます'); renderSettings(); return; }
+          toast('変更に失敗しました');
+        }
+      };
+      meshModeSeg.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-v]');
+        if (!b) return;
+        saveMesh({ meshPrivate: b.dataset.v === 'private' }, b.dataset.v === 'private' ? 'プライベートインスタンスに切り替えました' : '共同参加モードに切り替えました');
+      });
+      meshEnabledSeg.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-v]');
+        if (!b) return;
+        saveMesh({ meshEnabled: b.dataset.v === 'on' }, b.dataset.v === 'on' ? 'メッシュに参加しました' : 'メッシュを無効化しました（単独運用）');
+      });
+    }
 
-  $('#s-clear-history').addEventListener('click', () => { History.clear(); toast('履歴を消去しました'); });
-  $('#s-clear-cache').addEventListener('click', () => {
-    try {
-      Object.keys(sessionStorage).filter(k => k.startsWith('vandal:sc:')).forEach(k => sessionStorage.removeItem(k));
-      Object.keys(localStorage).filter(k => k.startsWith('vandal:snap:')).forEach(k => localStorage.removeItem(k));
-      toast('キャッシュを消去しました');
-    } catch (_) { toast('消去に失敗しました'); }
-  });
-  $('#s-clear-all').addEventListener('click', () => {
-    try {
-      Object.keys(localStorage).filter(k => k.startsWith('vandal')).forEach(k => localStorage.removeItem(k));
-      Object.keys(sessionStorage).filter(k => k.startsWith('vandal')).forEach(k => sessionStorage.removeItem(k));
-      toast('すべてのローカルデータを消去しました');
-      renderSettings();
-    } catch (_) { toast('消去に失敗しました'); }
-  });
+    $('#s-clear-history').addEventListener('click', () => { History.clear(); toast('履歴を消去しました'); });
+    $('#s-clear-cache').addEventListener('click', () => {
+      try {
+        Object.keys(sessionStorage).filter(k => k.startsWith('vandal:sc:')).forEach(k => sessionStorage.removeItem(k));
+        Object.keys(localStorage).filter(k => k.startsWith('vandal:snap:')).forEach(k => localStorage.removeItem(k));
+        toast('キャッシュを消去しました');
+      } catch (_) { toast('消去に失敗しました'); }
+    });
+    $('#s-clear-all').addEventListener('click', () => {
+      try {
+        Object.keys(localStorage).filter(k => k.startsWith('vandal')).forEach(k => localStorage.removeItem(k));
+        Object.keys(sessionStorage).filter(k => k.startsWith('vandal')).forEach(k => sessionStorage.removeItem(k));
+        toast('すべてのローカルデータを消去しました');
+        renderSettings();
+      } catch (_) { toast('消去に失敗しました'); }
+    });
+  }
 
-  return { destroy() {} };
+  // 先にスケルトンを描画し、設定取得後に再描画（体感初速優先）
+  render(null);
+  loadSettings().then((c) => render(c));
+
 }
 
 /* ========================================================== DOC (ドキュメント) */
@@ -215,7 +298,7 @@ function renderDoc() {
   app.innerHTML = `
   <div class="doc-page">
     <div class="doc-hero">
-      <img src="/logo.svg" alt="Vandal" class="doc-logo">
+      ${LOGO(64)}
       <p class="doc-tag">最速の、自己完結型の動画体験。</p>
     </div>
 
@@ -232,9 +315,11 @@ function renderDoc() {
 # 明示したいときだけ（任意）:
 VANDAL_MESH_URL=https://vandal.example.com          # 自インスタンスの公開 URL を固定
 VANDAL_MESH_PEERS=https://peer1.example.com,...     # 最初の接続先（ゴシップで自動拡大）
-# settings.json 相当（data/config.json / 設定ページからも変更可）:
+# settings.json 相当（data/config.json / 設定ページからも変更可 ※管理者のみ）:
 #   "meshPrivate": true   → URL を共有しない匿名参加（内部の共同作業は継続）
-#   "meshEnabled": false  → 完全単独運用に戻す</pre>
+#   "meshEnabled": false  → 完全単独運用に戻す
+# インスタンス管理（設定の書き込み）はデプロイ者専用:
+VANDAL_ADMIN_TOKEN=シークレット   # 明示運用。未設定なら設定ページで初回「管理権を取得」</pre>
         <p class="doc-note">訪問者にはインスタンスの URL を省略表記でしか表示しません。混み具合・CPU・利用できるプロキシの数は <code>/health</code>（ダッシュボード）と <code>/api/health</code>（JSON）で確認でき、健全インスタンスが十分なときはさらに並列化して高速化します。</p>
       </section>
 
@@ -257,29 +342,15 @@ VANDAL_MESH_PEERS=https://peer1.example.com,...     # 最初の接続先（ゴ�
 /* ======================================================= INSTANCES (インスタンス) */
 
 const TIER_META = {
-  S: { label: 'S', cls: 's', desc: '最速 — 発行も中継も引き受ける主力' },
-  A: { label: 'A', cls: 'a', desc: '健全 — メタ取得の委譲先として優先起用' },
-  B: { label: 'B', cls: 'b', desc: '平常 — プロキシ収集と中継を担当' },
-  C: { label: 'C', cls: 'c', desc: '注意 — 負荷が高いか資源が不足（回復を待つ）' },
+  S: { cls: 's', desc: '最速 — 発行も中継も引き受ける主力' },
+  A: { cls: 'a', desc: '健全 — メタ取得の委譲先として優先起用' },
+  B: { cls: 'b', desc: '平常 — プロキシ収集と中継を担当' },
+  C: { cls: 'c', desc: '注意 — 負荷が高いか資源が不足（回復を待つ）' },
 };
 
 function instBar(pct) {
   const v = Math.max(0, Math.min(100, Math.round(pct)));
   return `<span class="inst-bar"><i style="width:${v}%"></i></span><span class="inst-bar-num">${v}</span>`;
-}
-
-function instChips(h, extra = []) {
-  if (!h) return extra.join('');
-  const chips = [
-    `<span class="ichip">CPU <b>${Math.round(h.cpu || 0)}%</b></span>`,
-    `<span class="ichip">lag <b>${Math.round(h.lag || 0)}ms</b></span>`,
-    `<span class="ichip">mem <b>${Math.round(h.mem || 0)}%</b></span>`,
-    `<span class="ichip">同時 <b>${h.active ?? 0}</b></span>`,
-    `<span class="ichip">プロキシ <b>${h.proxies ?? 0}</b>${h.issuers ? ` <em>issuer ${h.issuers}</em>` : ''}</span>`,
-    `<span class="ichip">稼働 <b>${fmtUptime(h.uptime || 0)}</b></span>`,
-    ...extra,
-  ];
-  return chips.join('');
 }
 
 function fmtUptime(sec) {
@@ -289,26 +360,35 @@ function fmtUptime(sec) {
   return sec + '秒';
 }
 
+function instChips(h, extra = []) {
+  if (!h) return extra.join('');
+  return [
+    `<span class="ichip">lag <b>${Math.round(h.lag || 0)}ms</b></span>`,
+    `<span class="ichip">プロキシ <b>${h.proxies ?? 0}</b>${h.issuers ? ` <em>issuer ${h.issuers}</em>` : ''}</span>`,
+    `<span class="ichip">稼働 <b>${fmtUptime(h.uptime || 0)}</b></span>`,
+    ...extra,
+  ].join('');
+}
+
 function instCard(p, { self = false } = {}) {
   const h = p.health || {};
   const score = h.score ?? 0;
   const tier = p.tier || 'C';
-  const title = p.anonymous ? '匿名ピア（URL 非公開で参加中）' : (p.name || p.url || 'unknown instance');
-  const urlLine = self
-    ? (p.url ? `<div class="inst-url mono">${esc(p.url)}</div>` : `<div class="inst-url mono">URL 未確定（最初の公開アクセスで自動検出されます）</div>`)
-    : (p.anonymous ? `<div class="inst-url">🔒 プライベート参加（URL 非公開）</div>` : `<div class="inst-url mono">${esc(p.url || '')}</div>`);
+  const title = p.anonymous ? '匿名ピア' : (p.name || p.url || 'unknown');
+  const urlLine = p.anonymous
+    ? `<div class="inst-url">🔒 プライベート参加（URL 非公開）</div>`
+    : (p.url ? `<div class="inst-url mono">${esc(p.url)}</div>` : (self ? `<div class="inst-url">URL 未確定（最初の公開アクセスで自動検出）</div>` : ''));
   return `
   <div class="inst-card ${self ? 'self' : ''}">
     <div class="inst-card-top">
       <span class="tier-badge t-${TIER_META[tier]?.cls || 'c'}" title="${esc(TIER_META[tier]?.desc || '')}">${tier}</span>
-      <div class="inst-name">${esc(title)}${self ? '<span class="inst-self-tag">このインスタンス</span>' : ''}</div>
+      <div class="inst-name">${esc(title)}${self ? '<span class="inst-self-tag">このインスタンス</span>' : ''}${p.anonymous ? '<span class="inst-self-tag anon">匿名</span>' : ''}</div>
       <div class="inst-score">${instBar(score)}</div>
     </div>
     ${urlLine}
     <div class="inst-chips">${instChips(h, [
       p.ms != null ? `<span class="ichip">RTT <b>${p.ms}ms</b></span>` : '',
-      p.alive ? '<span class="ichip ok">● alive</span>' : '<span class="ichip warn">◌ stale</span>',
-      self ? `<span class="ichip">${'スコア'} <b>${score}</b></span>` : '',
+      p.alive ? '<span class="ichip ok">● 稼働中</span>' : '<span class="ichip warn">◌ 待機</span>',
     ])}</div>
   </div>`;
 }
@@ -318,16 +398,14 @@ function renderInstances() {
 
   app.innerHTML = `
   <div class="inst-page">
-    <div class="set-head">
-      <div class="inst-hero-ic">
-        <svg viewBox="0 0 24 24" class="ic"><path d="M12 2a3 3 0 0 1 3 3c0 1-.5 1.9-1.2 2.4l.2.1c2.9 1 5 3.5 5.8 6.6l.9-.4A3 3 0 1 1 22 17.5l-1.5 3.3a1 1 0 0 1-1.3.5l-2-1a1 1 0 0 1-.5-1.3l.9-2A9 9 0 0 0 6.4 17l.9 2a1 1 0 0 1-.5 1.3l-2 1a1 1 0 0 1-1.3-.5L2 17.5A3 3 0 1 1 3.3 13.7l.9.4C5 11 7.1 8.5 10 7.5l.2-.1A3 3 0 0 1 12 2z"/></svg>
-      </div>
-      <div>
+    <header class="inst-hero">
+      ${LOGO(44)}
+      <div class="inst-hero-txt">
         <h1>インスタンス</h1>
-        <p class="set-sub">Vandal インスタンス協力メッシュ — 起動中の全インスタンスが自動でここに集まり、健全性（ティア）で選別されながら分業します</p>
+        <p>起動中の Vandal が自動で集まる協力メッシュ。健全性でティア分けされ、プロキシ収集とメタ取得を分業します。</p>
       </div>
-    </div>
-    <div id="inst-body"><div class="mini-spin"></div></div>
+    </header>
+    <div id="inst-body"><div class="inst-skeleton"><div class="mini-spin"></div></div></div>
   </div>`;
 
   let timer = null;
@@ -335,17 +413,17 @@ function renderInstances() {
 
   async function refresh() {
     let st = null, cfg = null;
-    try { st = await api('/api/mesh/state', { ttl: 9 * 1000 }); } catch (_) {}
-    try { cfg = await api('/api/settings', { ttl: 9 * 1000 }); } catch (_) {}
+    try { st = await api('/api/mesh/state', { ttl: 11 * 1000 }); } catch (_) {}
+    try { cfg = await api('/api/settings', { ttl: 0, headers: Admin.headers() }); } catch (_) {}
     if (!alive || !$('#inst-body')) return;
     const body = $('#inst-body');
     if (!st) { body.innerHTML = nudgeHtml('状態を取得できませんでした', 'サーバーが混み合っています。少し待ってから再試行してください。'); return; }
 
     const self = st.self || {};
     const peers = st.peers || [];
+    const isAdmin = !!cfg?.admin;
     const tiers = { S: [], A: [], B: [], C: [] };
     for (const p of peers) (tiers[p.tier] || tiers.C).push(p);
-    // 自分もティア表の先頭に載せる
     const selfEntry = {
       url: self.url, name: self.name || 'vandal', anonymous: false,
       health: self.health, tier: self.health?.tier || 'C', ms: 0, alive: true, __self: true,
@@ -360,6 +438,7 @@ function renderInstances() {
         <div class="tier-cell">
           <span class="tier-badge big t-${TIER_META[t].cls}">${t}</span>
           <span class="tier-desc">${esc(TIER_META[t].desc)}</span>
+          <span class="tier-count">${list.length}</span>
         </div>
         <div class="tier-cards">${list.map((p) => instCard(p, { self: !!p.__self })).join('')}</div>
       </div>`;
@@ -368,19 +447,20 @@ function renderInstances() {
     const mode = st.mode === 'private';
     const roles = st.delegate?.roles || {};
     const shard = roles.scanShard || {};
+    const score = selfEntry.health?.score ?? '—';
 
     body.innerHTML = `
-      <div class="inst-self-strip ${selfEntry.tier}">
+      <div class="inst-self-strip">
         <div class="iss-left">
           <span class="tier-badge big t-${TIER_META[selfEntry.tier]?.cls}">${selfEntry.tier}</span>
           <div>
             <div class="iss-name">このインスタンス <b class="mono">${esc(self.url || 'URL 未確定')}</b></div>
-            <div class="iss-sub">score <b>${selfEntry.health?.score ?? '—'}</b>/100 ・ピア <b>${st.aliveCount - 1 >= 0 ? st.aliveCount - 1 : peers.length}</b> 台と協力中 ・共有プロキシ <b>${st.shareProxies}</b> 本</div>
+            <div class="iss-sub">score <b>${score}</b>/100 ・ピア <b>${Math.max(0, st.aliveCount)}</b> 台と協力中 ・共有プロキシ <b>${st.shareProxies}</b> 本</div>
           </div>
         </div>
         <div class="iss-right">
           <span class="mode-pill ${mode ? 'priv' : 'pub'}">${mode ? '🔒 プライベート' : '🌐 共同参加'}</span>
-          <button class="set-btn" id="inst-mode-toggle">${mode ? '公開参加にする' : 'プライベートにする'}</button>
+          ${isAdmin ? `<button class="set-btn" id="inst-mode-toggle">${mode ? '公開参加にする' : 'プライベートにする'}</button>` : ''}
         </div>
       </div>
 
@@ -388,16 +468,16 @@ function renderInstances() {
 
       <div class="inst-grid">
         <section class="set-card">
-          <h2><span class="set-ic">🧠</span>自動分業（スマート共同作業）</h2>
+          <h2><span class="set-ic">🧠</span>自動分業</h2>
           <ul class="inst-roles">
-            <li><b>メタ取得の委譲</b> — 自インスタンスの発行基盤が弱いとき、S/A ティアの健全インスタンスへ動画情報の取得を並行委譲します（現在の委譲先: <b>${(roles.metaPeers || []).length}</b> 台）。</li>
-            <li><b>プロキシ収集の分担</b> — 候補リストをシャード分割し、各インスタンスが別担当区間を実測。見つかった生きているプロキシは全員で共有します（担当シャード: <b>${shard.index ?? '—'}/${shard.count ?? '—'}</b>）。</li>
-            <li><b>並列ヘッジ</b> — 健全インスタンスが十分にいるほど、動画発行とコメント取得の当たり筋が増え、初速が伸びます（健全ピア: <b>${st.healthyPeers ?? 0}</b> 台）。</li>
+            <li><b>メタ取得の委譲</b> — 発行基盤が弱いとき、S/A ティアの健全ピアへ並行委譲（現在の委譲先: <b>${(roles.metaPeers || []).length}</b> 台）。</li>
+            <li><b>プロキシ収集の分担</b> — 候補リストをシャード分割して各インスタンスが別区間を実測し、成果を全員で共有（担当: <b>${shard.index ?? '—'}/${shard.count ?? '—'}</b>）。</li>
+            <li><b>並列ヘッジ</b> — 健全ピアが多いほど発行とコメント取得の当たり筋が増え、初速が伸びます（健全: <b>${st.healthyPeers ?? 0}</b> 台）。</li>
           </ul>
         </section>
         <section class="set-card">
-          <h2><span class="set-ic">🔒</span>プライバシー</h2>
-          <p class="set-note">訪問者には各インスタンスの URL を省略表記でしか見せません（共同作業の内部では完全な URL を使用）。さらに設定（settings.json 相当: <code>meshPrivate</code>）で URL を一切共有しない「プライベートインスタンス」にできます。その場合も内部の共同作業には参加し続けます。</p>
+          <h2><span class="set-ic">🔒</span>プライバシーと管理</h2>
+          <p class="set-note">訪問者には URL を省略表記でしか表示しません（共同作業の内部では完全な URL を使用）。運用モードの変更はデプロイした管理者のみが行えます — インスタンスの方針は訪問者ではなく所有者のものだからです。</p>
           <div class="set-actions">
             <a class="set-btn" href="#/settings">設定を開く</a>
             <a class="set-btn" href="/health" target="_blank" rel="noopener">/health ダッシュボード</a>
@@ -406,16 +486,19 @@ function renderInstances() {
       </div>`;
 
     $('#inst-mode-toggle')?.addEventListener('click', async () => {
-      const next = !(st.mode === 'private');
+      const next = !mode;
       try {
-        await api('/api/settings', { method: 'POST', body: JSON.stringify({ meshPrivate: next }), ttl: 0 });
+        await api('/api/settings', { method: 'POST', body: JSON.stringify({ meshPrivate: next }), ttl: 0, headers: Admin.headers() });
         toast(next ? 'プライベートインスタンスに切り替えました' : '公開参加モードに切り替えました');
         refresh();
-      } catch (_) { toast('変更に失敗しました'); }
+      } catch (e) {
+        if (e?.status === 403) toast('管理者のみ変更できます');
+        else toast('変更に失敗しました');
+      }
     });
   }
 
   refresh();
-  timer = setInterval(refresh, 10 * 1000);
+  timer = setInterval(refresh, 12 * 1000);
   return { destroy() { alive = false; clearInterval(timer); } };
 }

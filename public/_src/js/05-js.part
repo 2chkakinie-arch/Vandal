@@ -572,12 +572,17 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
 
     async function startHls() {
       const proxied = '/api/hls?v=' + id;
-      if (window.Hls && window.Hls.isSupported()) {
-        hlsInst = new window.Hls({ maxBufferLength: 30 });
+      // 高速化: hls.min.js（617KB）はここに来た初回だけ読み込む（旧: 全ページで事前読み込み）
+      let HlsLib = window.Hls;
+      if (!HlsLib) {
+        try { HlsLib = await loadHls(); } catch (_) { HlsLib = null; }
+      }
+      if (HlsLib && HlsLib.isSupported()) {
+        hlsInst = new HlsLib({ maxBufferLength: 30 });
         hlsInst.loadSource(proxied);
         hlsInst.attachMedia(video);
-        hlsInst.on(window.Hls.Events.MANIFEST_PARSED, () => safePlay());
-        hlsInst.on(window.Hls.Events.ERROR, (_e, data) => {
+        hlsInst.on(HlsLib.Events.MANIFEST_PARSED, () => safePlay());
+        hlsInst.on(HlsLib.Events.ERROR, (_e, data) => {
           if (data?.fatal) { if (bestProg) startProg(bestProg, 0); else if (rescues < 2) fatalRescue(false); }
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {

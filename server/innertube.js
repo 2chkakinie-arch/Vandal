@@ -414,7 +414,36 @@ async function solveCiphers(formats) {
  */
 let goodCombo = rt.goodCombo || null; // {clientKey, params, transportKind, transportUrl} — ディスク永続化で冷起動も一発
 
-async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
+/* ---- player 結果の短命メモ（高速化） --------------------------------
+ * 同じ動画への player 発行が短時間に集中すると、そのたびに全波レースが走り
+ * メッシュ委譲（/api/mesh/delegate/player）・getHls・warmDefault が互いに
+ * 重複発行して全員の初速を削り合っていた。成功結果だけ 45 秒（URL は 6 時間
+ * 有効なので安全）＋実行中 Promise の束ね込みで同一動画の並行発行を 1 本にする。
+ * 「再取得」ボタン等の明示リフレッシュ (fresh:true) と invalidateVideo は
+ * このメモを素通り／クリアする。 */
+const _playerMemo = new Map(); // key -> {exp, promise}
+const PLAYER_MEMO_TTL = 45 * 1000;
+function player(videoId, opts = {}) {
+  if (opts.fresh) return playerInner(videoId, opts);
+  const key = videoId + '|' + (opts.gl || 'JP');
+  const hit = _playerMemo.get(key);
+  if (hit && (hit.exp === 0 || hit.exp > Date.now())) return hit.promise; // 実行中 or 新鮮な成功
+  const promise = playerInner(videoId, opts)
+    .then((out) => {
+      if (out && (out.__urlMap || out.hls)) _playerMemo.set(key, { exp: Date.now() + PLAYER_MEMO_TTL, promise });
+      else _playerMemo.delete(key); // 失敗は抱え込まない（次は必ずライブ再挑戦）
+      return out;
+    })
+    .catch((e) => { _playerMemo.delete(key); throw e; });
+  _playerMemo.set(key, { exp: 0, promise });
+  if (_playerMemo.size > 60) { // 古いものから掃除
+    const ents = [..._playerMemo.entries()].sort((a, b) => (a[1].exp || 1) - (b[1].exp || 1));
+    for (const [k] of ents.slice(0, ents.length - 60)) _playerMemo.delete(k);
+  }
+  return promise;
+}
+
+async function playerInner(videoId, { hl = 'ja', gl = 'JP' } = {}) {
   const deadline = Date.now() + 45000; // global budget; success usually in <2s
   const used = new Set();              // "client|params|url" dedupe
   let lastErr = null;
@@ -547,45 +576,57 @@ async function player(videoId, { hl = 'ja', gl = 'JP' } = {}) {
     }
   }
 
-  // ---- メッシュ救済: 自 egress が総崩れのとき、重い救済ラウンドの前に
-  // S/A ティアの健全ピアへ発行を依頼する（往復 1 回で済む最速の復帰路）。
-  if (!win && !sabrFallback && mesh.canDelegate) {
-    try {
-      const peerRes = await mesh.delegatePlayer(videoId, { timeoutMs: 9000 });
-      if (peerRes?.__urlMap && (Object.keys(peerRes.__urlMap).length || peerRes.hls)) {
-        win = { res: { streamingData: { formats: [], adaptiveFormats: [] } }, transport: null, usable: [], clientKey: 'mesh-peer', params: null, __peerPlayer: peerRes };
-        logbus.info('mesh', '発行をピアへ委譲して救済', { v: videoId });
-      }
-    } catch (_) { /* fall through to local rescue */ }
-  }
-
-  // ---- 緊急ローテーション: 全経路が LOGIN_REQUIRED/ERROR/network で潰れた時、
-  // 「bot 確認画面」をユーザーに見せないため、プロキシプールを強制総入替して
-  // フレッシュな egress でもう一周だけ戦う（IP BAN の時間的クラスタを回避）。
+  // ---- メッシュ救済 + 緊急ローテーション（並列レース）:
+  // 自 egress が総崩れのとき、(a) S/A ティアの健全ピアへの発行委譲と
+  // (b) フレッシュな egress での再戦を**同時に**走らせ、先に成功した方を採る。
+  // 旧実装は「ピアへ 9 秒直列待ち → プール全件再実測を含む refresh を await」
+  // だったため、救済 1 段で 15〜30 秒待たされることがあった（体感速度を
+  // 激重にしていた本体）。ピア委譲は 4.5 秒で諦め、ローカル補充は
+  // quickTopUp（未テスト候補のみ・数秒）で済ませる。
   if (!win && !sabrFallback) {
-    try {
-      await proxyManager.refresh({ force: true });            // 300候補から新バッチ
-      proxyManager.certify({ force: true }).catch(() => {});  // 裏で issuer 認定
-      goodCombo = null;
-      const rescue = [];
-      for (const stepI of [0, 1]) { // 先頭2クライアントで広めに fan-out
-        const step = PLAYER_CHAIN[stepI];
-        rescue.push({ clientKey: step.client, params: step.params, transports: [directT, ...transportsForUrls(proxyManager.pickMany(5))] });
-      }
-      const rescueDeadline = Date.now() + 30000;
-      for (const step of rescue) {
-        if (Date.now() > rescueDeadline) break;
-        try {
-          // 高速化: 緊急時こそ直列総当たりは致命的に遅い — 各ステップの全経路を
-          // 同時レースにして、最初に生き残った egress で即確定する
-          const r = await runWave(step.transports.map(t => ({ clientKey: step.clientKey, params: step.params, transport: t })));
-          if (r) { win = r; break; }
-        } catch (e) {
-          if (e && e.status === 451) { lastErr = e; break; }
-          lastErr = e;
+    const peerJob = mesh.canDelegate
+      ? mesh.delegatePlayer(videoId, { timeoutMs: 4500 }).catch(() => null)
+      : null;
+    const localJob = (async () => {
+      try {
+        await proxyManager.quickTopUp(24);                    // 未テスト候補のみ高速補充（旧: 全件再実測の refresh）
+        proxyManager.certify().catch(() => {});               // 認定は裏で
+        proxyManager.refresh({ force: true }).catch(() => {}); // プールの総再構築も裏で
+        goodCombo = null;
+        const rescue = [];
+        for (const stepI of [0, 1]) { // 先頭2クライアントで広めに fan-out
+          const step = PLAYER_CHAIN[stepI];
+          rescue.push({ clientKey: step.client, params: step.params, transports: [directT, ...transportsForUrls(proxyManager.pickMany(5))] });
         }
-      }
-    } catch (_) { /* rescue is best-effort; Piped が後に控える */ }
+        const rescueDeadline = Date.now() + 20000;
+        for (const step of rescue) {
+          if (Date.now() > rescueDeadline) break;
+          try {
+            // 高速化: 緊急時こそ直列総当たりは致命的に遅い — 各ステップの全経路を
+            // 同時レースにして、最初に生き残った egress で即確定する
+            const r = await runWave(step.transports.map(t => ({ clientKey: step.clientKey, params: step.params, transport: t })));
+          if (r) return r;
+          } catch (e) {
+            if (e && e.status === 451) { lastErr = e; return null; } // definitive unplayable
+            lastErr = e;
+          }
+        }
+        return null;
+      } catch (_) { return null; }
+    })();
+    // 先に成功した方を採用（どちらかが成功した瞬間に抜ける。両方失敗したら null）
+    const never = () => new Promise(() => {});
+    const peerOk = (r) => !!(r?.__urlMap && (Object.keys(r.__urlMap).length || r.hls));
+    const localRace = localJob.then((r) => (r ? { local: r } : never()));
+    const peerRace = (peerJob || Promise.resolve(null)).then((r) => (peerOk(r) ? { peer: r } : never()));
+    const bothDone = Promise.all([localJob, peerJob || Promise.resolve(null)])
+      .then(([l, p]) => (l ? { local: l } : (peerOk(p) ? { peer: p } : null)));
+    const pickFirst = await Promise.race([localRace, peerRace, bothDone]);
+    if (pickFirst?.local) win = pickFirst.local;
+    else if (pickFirst?.peer) {
+      win = { res: { streamingData: { formats: [], adaptiveFormats: [] } }, transport: null, usable: [], clientKey: 'mesh-peer', params: null, __peerPlayer: pickFirst.peer };
+      logbus.info('mesh', '発行をピアへ委譲して救済', { v: videoId });
+    }
   }
 
   if (!win && sabrFallback) win = { ...sabrFallback, clientKey: 'ANDROID', params: null };
@@ -753,7 +794,10 @@ async function getVideoFullUncached(videoId, opts = {}) {
   const meshJob = (mesh.canDelegate && localEngineWeak())
     ? mesh.delegatePlayer(videoId).catch(() => null)
     : null;
-  const [pl, nx] = await Promise.allSettled([player(videoId, opts), watchNext(videoId, opts)]);
+  const [pl, nx] = await Promise.allSettled([
+    player(videoId, opts.fresh ? { ...opts, fresh: true } : opts),
+    watchNext(videoId, opts),
+  ]);
   if (pl.status === 'rejected' && nx.status === 'rejected') {
     if (meshJob) {
       const peer = await meshJob;
@@ -1016,7 +1060,8 @@ function refreshStreamMap(videoId) {
   const job = (async () => {
     streamInvalidate(videoId);
     caches.api.deletePrefix('vf:' + videoId); // 古い URL を抱えたフル応答も破棄
-    const p = await player(videoId);
+    for (const k of _playerMemo.keys()) if (k.startsWith(videoId + '|')) _playerMemo.delete(k); // 発行メモも破棄して新規発行
+    const p = await player(videoId, { fresh: true });
     const entry = buildMapEntry(p);
     streamMapSet(videoId, entry);
     return entry;
@@ -1031,6 +1076,7 @@ function invalidateVideo(videoId) {
   caches.api.delete('w:' + videoId + 'jaJP');
   caches.api.deletePrefix('vf:' + videoId);
   for (const k of _vfPending.keys()) if (k.startsWith('vf:' + videoId)) _vfPending.delete(k);
+  for (const k of _playerMemo.keys()) if (k.startsWith(videoId + '|')) _playerMemo.delete(k);
   caches.streams.delete('hls:' + videoId);
 }
 
