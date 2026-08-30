@@ -1,7 +1,7 @@
 /* --------------------------------- watch page -------------------------------- */
 function renderWatch(params, { vertical = false, shortId = null } = {}) {
   const id = shortId || params.get('v') || '';
-  if (!/^[\w-]{11}$/.test(id)) { errBox('動画IDが不正です', () => render()); return; }
+  if (!/^[\w-]{11}$/.test(id)) { errBox(T('動画IDが不正です'), () => render()); return; }
   setActiveNav(vertical ? 'shorts' : 'home');
   const listId = params.get('list') || '';
   let destroyed = false;
@@ -25,7 +25,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       <div class="wtitle"><div class="sk sk-line" style="width:70%"></div></div>
       <div class="action-row"><div class="sk sk-line" style="width:280px"></div></div>
       <div class="desc-card"><div class="sk sk-line"></div><div class="sk sk-line w60"></div></div>
-      <div class="comments" id="comments"><h3>コメント</h3><div class="mini-spin"></div></div>
+      <div class="comments" id="comments"><h3>${T('コメント')}</h3><div class="mini-spin"></div></div>
     </div>
     <div class="rail" id="rail"></div>
   </div>`;
@@ -125,7 +125,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       v.className = 'rescue-veil';
       wrapEl.appendChild(v);
     }
-    v.innerHTML = `<div class="mini-spin light"></div><p>接続経路を自動で切り替えています… <span>(${n}/${MAX_RESCUES})</span></p>`;
+    v.innerHTML = `<div class="mini-spin light"></div><p>${T('接続経路を自動で切り替えています…')} <span>(${n}/${MAX_RESCUES})</span></p>`;
   }
 
   function loadWatch(vid, busted) {
@@ -148,7 +148,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
         }
         if (!d.playable) {
           if (!isDefinitive(d.playability?.status) && rescues < MAX_RESCUES) { await fatalRescue(true); return; }
-          unplayableBox(d.playability?.reason || 'この動画は再生できません', d.playability?.status || '');
+          unplayableBox(d.playability?.reason || T('この動画は再生できません'), d.playability?.status || '');
           return;
         }
         rescueVeil(0);
@@ -176,14 +176,14 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       .catch(async (e) => {
         if (destroyed) return;
         if (rescues < MAX_RESCUES) { await fatalRescue(true); return; }
-        unplayableBox('再生に失敗しました', e.message);
+        unplayableBox(T('再生に失敗しました'), e.message);
         fillRail({ related: [] });
       });
   }
 
   function unplayableBox(msg, sub) {
     rescueVeil(0);
-    wrapEl.innerHTML = `<div class="unplayable"><div>${esc(msg)}<br><span style="opacity:.6;font-size:12px">${esc(sub || '')}</span><br><button class="retry" id="un-retry" style="margin-top:14px;background:#fff;color:#000;border-radius:18px;padding:0 20px;height:36px;font-size:13px">もう一度試す</button></div></div>`;
+    wrapEl.innerHTML = `<div class="unplayable"><div>${esc(msg)}<br><span style="opacity:.6;font-size:12px">${esc(sub || '')}</span><br><button class="retry" id="un-retry" style="margin-top:14px;background:#fff;color:#000;border-radius:18px;padding:0 20px;height:36px;font-size:13px">${T('もう一度試す')}</button></div></div>`;
     // 修正: 旧実装は location.hash 変更（hashchange→render）と手動 renderWatch の
     // 両方を起こし、watch ページが二重に初期化されていた。router 経由で
     // 旧ページを必ず destroy してから再構築する（同値 hash は手動 render）。
@@ -200,7 +200,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
     rescues++;
     rescueVeil(rescues);
     if (rescues > 1) await new Promise(r => setTimeout(r, 500 * rescues)); // ローテーション安定待ち
-    if (!silent) toast('ストリームを復旧しています…');
+    if (!silent) toast(T('ストリームを復旧しています…'));
     await api('/api/player/refresh', { method: 'POST', body: JSON.stringify({ v: id }) }).catch(() => null);
     if (destroyed) return;
     loadWatch(id, true);
@@ -252,8 +252,8 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
     const markDirectOn = () => { Store.del('exp:directBlocked'); Store.setExp('directOk', true, DIRECT_OK_TTL); };
     const markDirectOff = () => { Store.setExp('directBlocked', true, DIRECT_BLOCK_TTL); Store.del('exp:directOk'); };
     const qualities = [
-      { key: 'auto', label: directReady0 ? ('自動 (' + (direct?.height || 360) + 'p・直結最速)') : '自動 (360p・最速)' },
-      ...((canDash || (autoTrack && audTrack)) ? [{ key: 'hdauto', label: '自動HD (' + (autoTrack?.qualityLabel || '720p') + ')' }] : []),
+      { key: 'auto', label: directReady0 ? (T('自動 (') + (direct?.height || 360) + T('p・直結最速)')) : T('自動 (360p・最速)') },
+      ...((canDash || (autoTrack && audTrack)) ? [{ key: 'hdauto', label: T('自動HD (') + (autoTrack?.qualityLabel || '720p') + ')' }] : []),
       ...qList,
     ];
     let speed = 1;
@@ -270,7 +270,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
     video.addEventListener('error', () => {
       if (destroyed || suppressErrorHook || dash || pair) return;
       if (rescues < 2) fatalRescue(false);
-      else unplayableBox('ストリームに接続できませんでした', '経路の再取得に失敗しました');
+      else unplayableBox(T('ストリームに接続できませんでした'), T('経路の再取得に失敗しました'));
     });
 
     if (streams.hls && !qList.length && !bestProg) {
@@ -410,7 +410,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
               if (video.paused || video.seeking) return;
               if (video.currentTime - t0p < 0.15 && video.readyState < 3) {
                 Store.setExp('directBlocked', true, DIRECT_BLOCK_TTL);
-                toast('直結HDが不安定なため切り替えます');
+                toast(T('直結HDが不安定なため切り替えます'));
                 killPair();
                 (async () => {
                   if (canDash && await tryDash(track, video.currentTime)) return;
@@ -471,7 +471,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           if (ok) {
             markDirectOn(); // 学習: この回線は生 URL 再生可能（24h キャッシュ）
             mode = 'auto'; // 「自動」のまま = 直結が既定動作
-            if (qualities[0]) qualities[0].label = '自動 (' + (d.height || 360) + 'p・直結最速)';
+            if (qualities[0]) qualities[0].label = T('自動 (') + (d.height || 360) + T('p・直結最速)');
             const carry = Math.max(probe.currentTime, video.currentTime || 0, resumeAt || 0);
             cleanup();
             video.src = d.url;
@@ -507,7 +507,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           suppressErrorHook = false;
           if (ok) {
             markDirectOn();                            // learned: this network can play raw urls
-            if (qualities[0]) qualities[0].label = '自動 (' + (d.height || 360) + 'p・直結最速)';
+            if (qualities[0]) qualities[0].label = T('自動 (') + (d.height || 360) + T('p・直結最速)');
             mode = 'auto';                             // 「自動」画質のまま = 直結が既定動作
             // post-success stall watchdog: 「playing は出たが秒数が進まない」
             // （発信元 IP レピュテーション等で途中 stall）を検知してリレーへ強制復帰
@@ -518,7 +518,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
               if (video.paused || video.seeking || video.ended) return;
               if (video.currentTime - t0 < 0.15 && video.readyState < 3) {
                 Store.setExp('directBlocked', true, DIRECT_BLOCK_TTL);
-                toast('直結が不安定なためリレーに切り替えます');
+                toast(T('直結が不安定なためリレーに切り替えます'));
                 startProg(bestProg, video.currentTime || resumeAt || 0);
               }
             }, 5000);
@@ -559,7 +559,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           if (aEnd < video.currentTime - 0.8) {
             const t = video.currentTime;
             try { dash?.destroy(); dash = null; } catch (_) {}
-            toast('高画質モードの音声を再構成しています');
+            toast(T('高画質モードの音声を再構成しています'));
             tryPair(track, t).then(ok => { if (!ok) startProg(bestProg, t); });
           }
         }, 2600);
@@ -586,7 +586,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           // 画面を落としてしまう過剰反応だった）
           console.warn('[Vandal] direct stall detected — reverting to relay');
           Store.setExp('directBlocked', true, DIRECT_BLOCK_TTL);
-          toast('直結が不安定なためリレーに切り替えます');
+          toast(T('直結が不安定なためリレーに切り替えます'));
           startProg(bestProg, Math.max(video.currentTime, resumeAt || 0));
           return;
         }
@@ -594,7 +594,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           console.warn('[Vandal] stall detected (' + tag + ') — rescuing');
           fatalRescue(true);
         } else {
-          unplayableBox('ストリームに接続できませんでした', 'ネットワークが googlevideo への接続を制限している可能性があります');
+          unplayableBox(T('ストリームに接続できませんでした'), T('ネットワークが googlevideo への接続を制限している可能性があります'));
         }
       }, 7000);
     }
@@ -603,7 +603,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       if (!p) {
         if (streams.hls) { startHls(); return; }
         if (rescues < 2) { fatalRescue(false); return; }
-        unplayableBox('再生可能なフォーマットがありません', 'すべての取得経路が失敗しました');
+        unplayableBox(T('再生可能なフォーマットがありません'), T('すべての取得経路が失敗しました'));
         return;
       }
       dash?.destroy(); dash = null;
@@ -668,51 +668,51 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           <div class="ch-name" data-href="${ch.id ? '#/channel/' + esc(ch.id) : '#'}">${esc(ch.name || '')} ${ch.verified ? ICON_CHECK : ''}</div>
           <div class="ch-subs">${esc(ch.subs || '')}</div>
         </div>
-        <button class="sub-btn ${subbed0 ? 'subbed' : ''}" id="sub-btn">${subbed0 ? '登録済み' : 'チャンネル登録'}</button>
+        <button class="sub-btn ${subbed0 ? 'subbed' : ''}" id="sub-btn">${subbed0 ? T('登録済み') : T('チャンネル登録')}</button>
       </div>
       <div class="p-spacer" style="flex:1"></div>
       <div class="like-group">
-        <button id="like-btn" title="高く評価" style="${liked0 ? 'color:var(--blue)' : ''}"><svg viewBox="0 0 24 24" class="ic"><path d="M2 21h4V9H2zM22 10c0-1.1-.9-2-2-2h-6.3l.9-4.6v-.3c0-.4-.2-.8-.4-1.1L13.1 1 6.6 8.6c-.4.3-.6.8-.6 1.4v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7z"/></svg><span id="like-count">${esc(d.likeCount || '')}</span></button>
-        <button id="dislike-btn" title="低く評価"><svg viewBox="0 0 24 24" class="ic"><path d="M18 3h4v12h-4zM2 14c0 1.1.9 2 2 2h6.3l-.9 4.6v.3c0 .4.2.8.4 1.1l1.1 1 6.5-6.5c.4-.4.6-.9.6-1.4V4.1c0-1.1-.9-2-2-2H7c-.8 0-1.5.5-1.8 1.2l-3 7.1c-.1.2-.2.5-.2.7z"/></svg></button>
+        <button id="like-btn" title="${T('高く評価')}" style="${liked0 ? 'color:var(--blue)' : ''}"><svg viewBox="0 0 24 24" class="ic"><path d="M2 21h4V9H2zM22 10c0-1.1-.9-2-2-2h-6.3l.9-4.6v-.3c0-.4-.2-.8-.4-1.1L13.1 1 6.6 8.6c-.4.3-.6.8-.6 1.4v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7z"/></svg><span id="like-count">${esc(d.likeCount || '')}</span></button>
+        <button id="dislike-btn" title="${T('低く評価')}"><svg viewBox="0 0 24 24" class="ic"><path d="M18 3h4v12h-4zM2 14c0 1.1.9 2 2 2h6.3l-.9 4.6v.3c0 .4.2.8.4 1.1l1.1 1 6.5-6.5c.4-.4.6-.9.6-1.4V4.1c0-1.1-.9-2-2-2H7c-.8 0-1.5.5-1.8 1.2l-3 7.1c-.1.2-.2.5-.2.7z"/></svg></button>
       </div>
-      <button class="btn-pill" id="share-btn"><svg viewBox="0 0 24 24" class="ic"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>共有</button>
-      <button class="btn-pill" id="save-btn" style="${saved0 ? 'color:var(--blue)' : ''}"><svg viewBox="0 0 24 24" class="ic"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-5 7 5V5a2 2 0 0 0-2-2z"/></svg>${saved0 ? '保存済み' : '保存'}</button>
-      <button class="btn-pill ask-btn" id="ask-btn" title="AIに質問（概要欄を読み込み済み）"><span class="ask-gem">♦</span>Ask</button>`;
+      <button class="btn-pill" id="share-btn"><svg viewBox="0 0 24 24" class="ic"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg>${T('共有')}</button>
+      <button class="btn-pill" id="save-btn" style="${saved0 ? 'color:var(--blue)' : ''}"><svg viewBox="0 0 24 24" class="ic"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-5 7 5V5a2 2 0 0 0-2-2z"/></svg>${saved0 ? T('保存済み') : T('保存')}</button>
+      <button class="btn-pill ask-btn" id="ask-btn" title="${T('AIに質問（概要欄を読み込み済み）')}"><span class="ask-gem">♦</span>Ask</button>`;
     const entry = () => ({ v: id, t: d.title || '', cn: ch.name || '', ch: ch.id || '', d: d.lengthSeconds || 0 });
     $('#like-btn')?.addEventListener('click', function () {
       const liked = Likes.toggle(entry());
       this.style.color = liked ? 'var(--blue)' : '';
-      toast(liked ? '高く評価しました（この端末に保存）' : '取り消しました');
+      toast(liked ? T('高く評価しました（この端末に保存）') : T('取り消しました'));
     });
-    $('#dislike-btn')?.addEventListener('click', () => toast('フィードバックありがとうございます'));
+    $('#dislike-btn')?.addEventListener('click', () => toast(T('フィードバックありがとうございます')));
     $('#share-btn')?.addEventListener('click', async () => {
       const url = location.origin + location.pathname + '#/watch?v=' + id;
-      try { await navigator.clipboard.writeText(url); toast('リンクをコピーしました'); }
+      try { await navigator.clipboard.writeText(url); toast(T('リンクをコピーしました')); }
       catch (_) { toast(url, 6000); }
     });
     $('#save-btn')?.addEventListener('click', function () {
       const saved = Saves.toggle(entry());
       this.style.color = saved ? 'var(--blue)' : '';
-      this.innerHTML = this.innerHTML.replace(saved ? '>保存<' : '>保存済み<', saved ? '>保存済み<' : '>保存<');
-      toast(saved ? '保存しました（この端末に保存）' : '取り消しました');
+      this.innerHTML = this.innerHTML.replace(saved ? '>' + T('保存') + '<' : '>' + T('保存済み') + '<', saved ? '>' + T('保存済み') + '<' : '>' + T('保存') + '<');
+      toast(saved ? T('保存しました（この端末に保存）') : T('取り消しました'));
     });
     $('#sub-btn')?.addEventListener('click', function () {
-      if (!ch.id) { toast('チャンネル情報を取得できませんでした'); return; }
+      if (!ch.id) { toast(T('チャンネル情報を取得できませんでした')); return; }
       const subbed = Subs.toggle({ id: ch.id, name: ch.name, avatar: ch.avatar });
       this.classList.toggle('subbed', subbed);
-      this.textContent = subbed ? '登録済み' : 'チャンネル登録';
-      toast(subbed ? 'チャンネル登録しました（この端末に保存）' : '登録を解除しました');
+      this.textContent = subbed ? T('登録済み') : T('チャンネル登録');
+      toast(subbed ? T('チャンネル登録しました（この端末に保存）') : T('登録を解除しました'));
     });
 
     const desc = $('.desc-card');
     if (desc) {
       desc.innerHTML = `
         <div class="desc-stats">${esc(stats)}</div>
-        <div class="desc-body">${linkify(d.description || '概要欄はありません')}</div>
-        <span class="desc-more">...続きを読む</span>`;
+        <div class="desc-body">${linkify(d.description || T('概要欄はありません'))}</div>
+        <span class="desc-more">${T('...続きを読む')}</span>`;
       $('.desc-more', desc).addEventListener('click', function () {
         desc.classList.toggle('open');
-        this.textContent = desc.classList.contains('open') ? '一部を表示' : '...続きを読む';
+        this.textContent = desc.classList.contains('open') ? T('一部を表示') : T('...続きを読む');
       });
     }
     setupAsk(d);
@@ -779,7 +779,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
         bubble('ai', mdLite(r.answer));
       } catch (e) {
         wait.remove();
-        bubble('ai', esc(e.status === 429 ? e.message : '応答に失敗しました。少し待ってからもう一度お試しください。'));
+        bubble('ai', esc(e.status === 429 ? e.message : T('応答に失敗しました。少し待ってからもう一度お試しください。')));
       }
       sending = false;
     }
@@ -793,19 +793,20 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
             <span class="ask-gem">♦</span>
             <div class="ask-htx">
               <div class="ask-title">Ask</div>
-              <div class="ask-sub">この動画の概要欄を読み込んで回答します</div>
+              <div class="ask-sub">${T('この動画の概要欄を読み込んで回答します')}</div>
             </div>
-            <button class="icon-btn" id="ask-x" title="閉じる"><svg viewBox="0 0 24 24" class="ic"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button>
+            <button class="icon-btn" id="ask-x" title="${T('閉じる')}"><svg viewBox="0 0 24 24" class="ic"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button>
           </div>
           <div class="ask-msgs"></div>
           <div class="ask-chips">
-            <button class="ask-chip" data-q="この動画の概要欄を3行で要約して">概要欄を要約</button>
-            <button class="ask-chip" data-q="この動画の見どころを3つ教えて">見どころは？</button>
-            <button class="ask-chip" data-q="概要欄のリンクやタイムスタンプを整理して">リンク・章を整理</button>
+            <button class="ask-chip" data-q="この動画の概要欄を3行で要約して">${T('概要欄を要約')}</button>
+            <button class="ask-chip" data-q="この動画の見どころを3つ教えて">${T('見どころは？')}</button>
+            <button class="ask-chip" data-q="概要欄のリンクやタイムスタンプを整理して">${T('リンク・章を整理')}</button>
           </div>
           <form class="ask-form">
-            <input id="ask-in" type="text" placeholder="この動画について質問…" autocomplete="off" maxlength="1000">
-            <button class="ask-send" type="submit" title="送信" aria-label="送信"><svg viewBox="0 0 24 24" class="ic"><path d="M3 20v-6l8-2-8-2V4l19 8z"/></svg></button>
+            <input id="ask-in" type="text" placeholder="${T('この動画について質問…')}" autocomplete="off" maxlength="1000">
+            <button type="button" class="icon-btn ask-mic" id="ask-mic" aria-label="${T('音声検索')}" title="${T('音声検索')}" aria-pressed="false"><svg viewBox="0 0 24 24" class="ic"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-2.1a7 7 0 0 0 6-6.9z"/></svg></button>
+            <button class="ask-send" type="submit" title="${T('送信')}" aria-label="${T('送信')}"><svg viewBox="0 0 24 24" class="ic"><path d="M3 20v-6l8-2-8-2V4l19 8z"/></svg></button>
           </form>
           <div class="ask-foot">♦Ask by HavocPianoAI ・ Vandal</div>
         </div>`;
@@ -813,6 +814,12 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       panel = host.querySelector('#ask-panel');
       host.querySelector('#ask-scrim').addEventListener('click', close);
       host.querySelector('#ask-x').addEventListener('click', close);
+      host.querySelector('#ask-mic')?.addEventListener('click', () => {
+        Voice.start(host.querySelector('#ask-mic'), host.querySelector('#ask-in'), (t) => {
+          const inp = host.querySelector('#ask-in');
+          if (inp && t) { inp.value = t; inp.focus(); }
+        });
+      });
       host.querySelector('.ask-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const v = host.querySelector('#ask-in').value.trim();
@@ -845,15 +852,15 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       .then((c) => {
         if (destroyed || !document.body.contains(box)) return;
         if (c.disabled && !(c.comments || []).length) {
-          box.innerHTML = `<h3>コメント</h3><div class="cm-disabled">コメントはオフになっています。</div>`;
+          box.innerHTML = `<h3>${T('コメント')}</h3><div class="cm-disabled">${T('コメントはオフになっています。')}</div>`;
           return;
         }
         let cont = c.continuation;
         let loading = false;
         let retries = 0;
         box.innerHTML = `
-          <h3><span id="cm-count">${c.count ? esc(c.count) + ' 件のコメント' : 'コメント'}</span>
-          <span class="cm-sort"><svg viewBox="0 0 24 24" class="ic" style="width:20px;height:20px"><path d="M3 6h14v2H3zm0 5h10v2H3zm0 5h6v2H3z"/></svg>並べ替え</span></h3>
+          <h3><span id="cm-count">${c.count ? esc(c.count) + T('件のコメント') : T('コメント')}</span>
+          <span class="cm-sort"><svg viewBox="0 0 24 24" class="ic" style="width:20px;height:20px"><path d="M3 6h14v2H3zm0 5h10v2H3zm0 5h6v2H3z"/></svg>${T('並べ替え')}</span></h3>
           <div id="cm-list">${(c.comments || []).map(commentHtml).join('')}</div>`;
         if (cont) {
           // 永久読み込み: 継続トークンがある限りスクロールで自動追記し続ける。
@@ -891,7 +898,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           sent = lazySentinel(box, loadMore);
         }
       })
-      .catch(() => { const b = $('#comments'); if (b) b.innerHTML = `<h3>コメント</h3><div class="cm-disabled">コメントを読み込めませんでした。</div>`; });
+      .catch(() => { const b = $('#comments'); if (b) b.innerHTML = `<h3>${T('コメント')}</h3><div class="cm-disabled">${T('コメントを読み込めませんでした。')}</div>`; });
   }
 
   function commentHtml(cm) {
@@ -907,7 +914,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           <span class="icon-btn cm-ico"><svg viewBox="0 0 24 24" class="ic"><path d="M2 21h4V9H2zM22 10c0-1.1-.9-2-2-2h-6.3l.9-4.6c0-.9-.8-1.5-.8-1.5L12.7 1 6.2 8.6C5.8 8.9 5 9.5 5 10v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7z"/></svg></span>
           <span class="cm-likes">${esc(cm.likes || '')}</span>
           <span class="icon-btn cm-ico"><svg viewBox="0 0 24 24" class="ic"><path d="M18 3h4v12h-4zM2 14c0 1.1.9 2 2 2h6.3l-.9 4.6c0 .9.8 1.5.8 1.5l1.1 1 6.5-6.5c.4-.4.6-.9.6-1.4V4.1c0-1.1-.9-2-2-2H7c-.8 0-1.5.5-1.8 1.2l-3 7.1c-.1.2-.2.5-.2.7z"/></svg></span>
-          ${cm.replyCount ? `<span class="cm-reply">返信 ${esc(String(cm.replyCount))} 件</span>` : ''}
+          ${cm.replyCount ? `<span class="cm-reply">${TF('返信 {n} 件', { n: esc(String(cm.replyCount)) })}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -938,7 +945,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
 
   function adoptPanel(n) {
     if (!n) return;
-    plState.title = n.title || plState.title || '再生リスト';
+    plState.title = n.title || plState.title || T('再生リスト');
     plState.owner = n.owner || plState.owner || '';
     plState.total = n.total || plState.total || 0;
     plState.items = n.items || plState.items;
@@ -977,7 +984,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
           const n = normListData(full);
           if (!n) return;
           // ローカル保存済みの項目は信頼できるので、サーバー版が豊富なら差し替え
-          if (n.items.length >= plState.items.length || !plState.title || plState.title === '再生リスト') {
+          if (n.items.length >= plState.items.length || !plState.title || plState.title === T('再生リスト')) {
             adoptPanel(n);
             if (plState.idx < 0) { plState.items.unshift({ id: currentVid, title: document.title, thumb: '', channel: plState.owner, duration: '' }); plState.idx = 0; }
             drawPanel();
@@ -1016,11 +1023,11 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
             <span class="plp-ic">${ICON_LIST}</span>
             <span class="plp-name">${esc(plState.title)}</span>
             <div class="plp-spacer"></div>
-            <button class="icon-btn plp-btn ${plState.shuffle ? 'on' : ''}" data-plact="shuffle" title="シャッフル">${ICON_SHUFFLE}</button>
-            <button class="icon-btn plp-btn ${plState.loop ? 'on' : ''}" data-plact="loop" title="ループ再生">${ICON_LOOP}</button>
-            <button class="icon-btn plp-btn" data-plact="fold" title="折りたたむ"><svg viewBox="0 0 24 24" class="ic"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg></button>
+            <button class="icon-btn plp-btn ${plState.shuffle ? 'on' : ''}" data-plact="shuffle" title="${T('シャッフル')}">${ICON_SHUFFLE}</button>
+            <button class="icon-btn plp-btn ${plState.loop ? 'on' : ''}" data-plact="loop" title="${T('ループ再生')}">${ICON_LOOP}</button>
+            <button class="icon-btn plp-btn" data-plact="fold" title="${T('折りたたむ')}"><svg viewBox="0 0 24 24" class="ic"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg></button>
           </div>
-          <div class="plp-sub">${esc(plState.owner || '再生リスト')} ・ ${plState.idx + 1} / ${totalTxt}</div>
+          <div class="plp-sub">${esc(plState.owner || T('再生リスト'))} ・ ${plState.idx + 1} / ${totalTxt}</div>
         </div>
         <div class="plp-items">${rows}</div>
       </div>`);
@@ -1055,7 +1062,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
     }
     const v = plState.items[next];
     if (!v) return;
-    toast('次の動画を再生: ' + (v.title || v.id).slice(0, 30), 1800);
+    toast(T('次の動画を再生: ') + (v.title || v.id).slice(0, 30), 1800);
     location.hash = '#/watch?v=' + v.id + '&list=' + encodeURIComponent(listId);
   }
 

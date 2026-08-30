@@ -172,10 +172,6 @@ html.dark .brand-wordmark-img:hover {
 .search-btn:hover { background: var(--hover-2); color: var(--text); border-color: var(--border); box-shadow: none; }
 #search-form .mic { background: var(--chip-bg); }
 .suggest { border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-lg); }
-html.dark #theme-toggle .theme-ic-sun { display: none; }
-html.dark #theme-toggle .theme-ic-moon { display: none; }
-html:not(.dark) #theme-toggle .theme-ic-sun { display: none; }
-#theme-toggle .ic { pointer-events: none; }
 
 /* ============ ナビゲーションドロワー（既定: 閉） ============ */
 #page { padding-top: 60px; }

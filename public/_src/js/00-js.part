@@ -26,6 +26,355 @@ function toast(msg, ms = 2600) {
 }
 window.toast = toast;
 
+/* ────────────────────────────────────────────────────────────────────
+ * 🌐 i18n — Vandal 多言語エンジン（日本語 / English / 中文 / Русский）
+ * ・検出は navigator.language で自動（設定で「オート(システム)」= 既定）
+ * ・T('日本語原文') でそのまま翻訳、TF('{n} 件の…', {n}) で変数入り文字列
+ * ・動画処理・再生エンジンのロジックには一切触れない（UI のみ）
+ * ──────────────────────────────────────────────────────────────────── */
+const I18N_LANGS = [
+  { code: 'ja', name: '日本語',   flag: '🇯🇵', speech: 'ja-JP' },
+  { code: 'en', name: 'English',  flag: '🇬🇧', speech: 'en-US' },
+  { code: 'zh', name: '中文',     flag: '🇨🇳', speech: 'zh-CN' },
+  { code: 'ru', name: 'Русский',  flag: '🇷🇺', speech: 'ru-RU' },
+];
+const I18N_DICT = {
+  'ホーム': { en: 'Home', zh: '首页', ru: 'Главная' },
+  'ショート': { en: 'Shorts', zh: '短视频', ru: 'Shorts' },
+  '登録チャンネル': { en: 'Subscriptions', zh: '订阅内容', ru: 'Подписки' },
+  'マイページ': { en: 'You', zh: '我的', ru: 'Вы' },
+  'インスタンス': { en: 'Instances', zh: '实例', ru: 'Инстансы' },
+  '設定': { en: 'Settings', zh: '设置', ru: 'Настройки' },
+  'ドキュメント': { en: 'Documentation', zh: '文档', ru: 'Документация' },
+  'メニュー（ナビゲーション）': { en: 'Menu (navigation)', zh: '菜单（导航）', ru: 'Меню (навигация)' },
+  'ナビゲーション': { en: 'Navigation', zh: '导航', ru: 'Навигация' },
+  '検索': { en: 'Search', zh: '搜索', ru: 'Поиск' },
+  '検索 （ / でフォーカス）': { en: 'Search (press / to focus)', zh: '搜索（按 / 聚焦）', ru: 'Поиск (нажмите / для фокуса)' },
+  '音声検索': { en: 'Voice search', zh: '语音搜索', ru: 'Голосовой поиск' },
+  '音声検索は現在ご利用いただけません': { en: 'Voice search is not available right now', zh: '语音搜索暂不可用', ru: 'Голосовой поиск сейчас недоступен' },
+  'このブラウザは音声入力に対応していません': { en: 'This browser does not support voice input', zh: '此浏览器不支持语音输入', ru: 'Этот браузер не поддерживает голосовой ввод' },
+  'マイクの使用が許可されていません': { en: 'Microphone access is not allowed', zh: '未获得麦克风使用权限', ru: 'Доступ к микрофону запрещён' },
+  '音声入力を開始…': { en: 'Listening…', zh: '正在聆听…', ru: 'Слушаю…' },
+  'もう一度お試しください': { en: 'Please try again', zh: '请重试', ru: 'Попробуйте ещё раз' },
+  'Vandal ホーム': { en: 'Vandal Home', zh: 'Vandal 首页', ru: 'Домой — Vandal' },
+  'Vandal Project': { en: 'Vandal Project', zh: 'Vandal 项目', ru: 'Проект Vandal' },
+  '独立したオープンプロジェクト': { en: 'An independent open project', zh: '独立的开源项目', ru: 'Независимый открытый проект' },
+  'すべて': { en: 'All', zh: '全部', ru: 'Все' },
+  '音楽': { en: 'Music', zh: '音乐', ru: 'Музыка' },
+  'ゲーム': { en: 'Gaming', zh: '游戏', ru: 'Игры' },
+  'ニュース': { en: 'News', zh: '新闻', ru: 'Новости' },
+  'アニメ': { en: 'Anime', zh: '动漫', ru: 'Аниме' },
+  '料理': { en: 'Cooking', zh: '美食', ru: 'Кулинария' },
+  'スポーツ': { en: 'Sports', zh: '体育', ru: 'Спорт' },
+  'テクノロジー': { en: 'Technology', zh: '科技', ru: 'Технологии' },
+  '動画': { en: 'Videos', zh: '视频', ru: 'Видео' },
+  'チャンネル': { en: 'Channels', zh: '频道', ru: 'Каналы' },
+  '再生リスト': { en: 'Playlists', zh: '播放列表', ru: 'Плейлисты' },
+  '再生リストをすべて見る': { en: 'View full playlist', zh: '查看完整播放列表', ru: 'Смотреть весь плейлист' },
+  '履歴から削除': { en: 'Remove from history', zh: '从历史记录中删除', ru: 'Удалить из истории' },
+  '履歴から削除しました': { en: 'Removed from history', zh: '已从历史记录中删除', ru: 'Удалено из истории' },
+  'まずは検索してみましょう': { en: 'Start by searching', zh: '先从搜索开始吧', ru: 'Начните с поиска' },
+  '視聴した動画がここに表示されます。': { en: 'Videos you watch will appear here.', zh: '观看过的视频会显示在这里。', ru: 'Просмотренные видео появятся здесь.' },
+  '視聴履歴がまだありません。上の検索バーから動画を検索すると、あなたの好みに合わせたおすすめがここに表示されます。': { en: 'No watch history yet. Search for videos above and recommendations tailored to your taste will appear here.', zh: '暂无观看记录。使用上方搜索栏搜索视频后，这里会显示为你量身推荐的内容。', ru: 'История просмотра пока пуста. Найдите видео в строке поиска — здесь появятся рекомендации по вашим интересам.' },
+  'あなたにおすすめ': { en: 'Recommended for you', zh: '为你推荐', ru: 'Рекомендуем для вас' },
+  'ホームを読み込めませんでした': { en: 'Could not load home', zh: '无法加载首页', ru: 'Не удалось загрузить главную' },
+  'この検索ではショート動画が見つかりませんでした。': { en: 'No Shorts found for this search.', zh: '此搜索没有找到短视频。', ru: 'По этому запросу Shorts не найдены.' },
+  '別のキーワードで検索してみてください。': { en: 'Try a different search term.', zh: '试试其他关键词。', ru: 'Попробуйте другой запрос.' },
+  '結果が見つかりません': { en: 'No results found', zh: '未找到结果', ru: 'Результатов не найдено' },
+  '検索に失敗しました: ': { en: 'Search failed: ', zh: '搜索失败：', ru: 'Поиск не удался: ' },
+  '再試行': { en: 'Retry', zh: '重试', ru: 'Повторить' },
+  '画質': { en: 'Quality', zh: '画质', ru: 'Качество' },
+  '再生速度': { en: 'Playback speed', zh: '播放速度', ru: 'Скорость' },
+  '標準': { en: 'Normal', zh: '标准', ru: 'Обычная' },
+  '設定': { en: 'Settings', zh: '设置', ru: 'Настройки' },
+  '再生 (k)': { en: 'Play (k)', zh: '播放 (k)', ru: 'Воспроизвести (k)' },
+  'ミュート (m)': { en: 'Mute (m)', zh: '静音 (m)', ru: 'Без звука (m)' },
+  '全画面表示 (f)': { en: 'Fullscreen (f)', zh: '全屏 (f)', ru: 'Во весь экран (f)' },
+  '動画IDが不正です': { en: 'Invalid video ID', zh: '视频 ID 无效', ru: 'Неверный ID видео' },
+  'コメント': { en: 'Comments', zh: '评论', ru: 'Комментарии' },
+  '接続経路を自動で切り替えています…': { en: 'Switching connection routes automatically…', zh: '正在自动切换连接线路…', ru: 'Автоматически переключаем маршрут…' },
+  'この動画は再生できません': { en: 'This video cannot be played', zh: '此视频无法播放', ru: 'Это видео недоступно для воспроизведения' },
+  '再生に失敗しました': { en: 'Playback failed', zh: '播放失败', ru: 'Ошибка воспроизведения' },
+  'もう一度試す': { en: 'Try again', zh: '再试一次', ru: 'Попробовать снова' },
+  'ストリームを復旧しています…': { en: 'Recovering stream…', zh: '正在恢复视频流…', ru: 'Восстанавливаем поток…' },
+  '自動 (360p・最速)': { en: 'Auto (360p · fastest)', zh: '自动 (360p · 最快)', ru: 'Авто (360p · быстрейший)' },
+  '自動 (': { en: 'Auto (', zh: '自动 (', ru: 'Авто (' },
+  'p・直結最速)': { en: 'p · direct fastest)', zh: 'p · 直连最快)', ru: 'p · прямое быстрое)' },
+  '自動HD (': { en: 'Auto HD (', zh: '自动高清 (', ru: 'Авто HD (' },
+  'ストリームに接続できませんでした': { en: 'Could not connect to stream', zh: '无法连接到视频流', ru: 'Не удалось подключиться к потоку' },
+  '経路の再取得に失敗しました': { en: 'Failed to re-fetch the route', zh: '重新获取线路失败', ru: 'Не удалось получить маршрут заново' },
+  '直結HDが不安定なため切り替えます': { en: 'Direct HD is unstable — switching', zh: '直连高清不稳定，正在切换', ru: 'Прямое HD нестабильно — переключаем' },
+  '直結が不安定なためリレーに切り替えます': { en: 'Direct connection is unstable — switching to relay', zh: '直连不稳定，正在切换中继', ru: 'Прямое подключение нестабильно — переключаем на ретрансляцию' },
+  '高画質モードの音声を再構成しています': { en: 'Reconfiguring HD audio…', zh: '正在重新配置高清音频…', ru: 'Пересобираем HD-аудио…' },
+  'ネットワークが googlevideo への接続を制限している可能性があります': { en: 'Your network may be blocking connections to googlevideo', zh: '您的网络可能限制了到 googlevideo 的连接', ru: 'Возможно, ваша сеть блокирует доступ к googlevideo' },
+  '再生可能なフォーマットがありません': { en: 'No playable format available', zh: '没有可播放的格式', ru: 'Нет воспроизводимого формата' },
+  'すべての取得経路が失敗しました': { en: 'All fetch routes failed', zh: '所有获取线路均失败', ru: 'Все маршруты получения не сработали' },
+  '登録済み': { en: 'Subscribed', zh: '已订阅', ru: 'Вы подписаны' },
+  'チャンネル登録': { en: 'Subscribe', zh: '订阅', ru: 'Подписаться' },
+  '高く評価': { en: 'Like', zh: '点赞', ru: 'Нравится' },
+  '低く評価': { en: 'Dislike', zh: '不喜欢', ru: 'Не нравится' },
+  '共有': { en: 'Share', zh: '分享', ru: 'Поделиться' },
+  '保存': { en: 'Save', zh: '保存', ru: 'Сохранить' },
+  '保存済み': { en: 'Saved', zh: '已保存', ru: 'Сохранено' },
+  '高く評価しました（この端末に保存）': { en: 'Liked (saved on this device)', zh: '已点赞（保存在本设备）', ru: 'Понравилось (сохранено на устройстве)' },
+  '取り消しました': { en: 'Undone', zh: '已取消', ru: 'Отменено' },
+  'フィードバックありがとうございます': { en: 'Thanks for your feedback', zh: '感谢您的反馈', ru: 'Спасибо за отзыв' },
+  'リンクをコピーしました': { en: 'Link copied', zh: '链接已复制', ru: 'Ссылка скопирована' },
+  '保存しました（この端末に保存）': { en: 'Saved (on this device)', zh: '已保存（保存在本设备）', ru: 'Сохранено (на устройстве)' },
+  'チャンネル情報を取得できませんでした': { en: 'Could not fetch channel info', zh: '无法获取频道信息', ru: 'Не удалось получить данные канала' },
+  'チャンネル登録しました（この端末に保存）': { en: 'Subscribed (saved on this device)', zh: '已订阅（保存在本设备）', ru: 'Подписка оформлена (сохранена на устройстве)' },
+  '登録を解除しました': { en: 'Unsubscribed', zh: '已取消订阅', ru: 'Подписка отменена' },
+  '概要欄はありません': { en: 'No description', zh: '暂无简介', ru: 'Описание отсутствует' },
+  '...続きを読む': { en: '…more', zh: '…展开', ru: '…далее' },
+  '一部を表示': { en: 'Show less', zh: '收起', ru: 'Свернуть' },
+  'AIに質問（概要欄を読み込み済み）': { en: 'Ask AI (description loaded)', zh: '询问 AI（已读取简介）', ru: 'Спросить ИИ (описание загружено)' },
+  'Ask': { en: 'Ask', zh: 'Ask', ru: 'Ask' },
+  'この動画の概要欄を読み込んで回答します': { en: 'Reads the video description and answers', zh: '读取视频简介并回答', ru: 'Читает описание видео и отвечает' },
+  '閉じる': { en: 'Close', zh: '关闭', ru: 'Закрыть' },
+  '概要欄を要約': { en: 'Summarize description', zh: '概括简介', ru: 'Кратко о описании' },
+  '見どころは？': { en: 'Highlights?', zh: '有哪些看点？', ru: 'Самое интересное?' },
+  'リンク・章を整理': { en: 'Links & chapters', zh: '整理链接与章节', ru: 'Ссылки и главы' },
+  'この動画について質問…': { en: 'Ask about this video…', zh: '就这个视频提问…', ru: 'Спросите об этом видео…' },
+  '送信': { en: 'Send', zh: '发送', ru: 'Отправить' },
+  '応答に失敗しました。少し待ってからもう一度お試しください。': { en: 'The response failed. Please wait a moment and try again.', zh: '响应失败，请稍后再试。', ru: 'Ошибка ответа. Подождите и попробуйте снова.' },
+  'コメントはオフになっています。': { en: 'Comments are turned off.', zh: '评论已关闭。', ru: 'Комментарии отключены.' },
+  'コメントを読み込めませんでした。': { en: 'Could not load comments.', zh: '无法加载评论。', ru: 'Не удалось загрузить комментарии.' },
+  '並べ替え': { en: 'Sort by', zh: '排序', ru: 'Сортировка' },
+  '件のコメント': { en: ' comments', zh: '条评论', ru: ' комментариев' },
+  '返信 {n} 件': { en: '{n} replies', zh: '{n} 条回复', ru: '{n} ответов' },
+  'シャッフル': { en: 'Shuffle', zh: '随机播放', ru: 'Перемешать' },
+  'ループ再生': { en: 'Loop', zh: '循环播放', ru: 'Повтор' },
+  '折りたたむ': { en: 'Collapse', zh: '收起', ru: 'Свернуть' },
+  '次の動画を再生: ': { en: 'Playing next: ', zh: '接下来播放：', ru: 'Далее: ' },
+  '作成した再生リスト': { en: 'Created playlists', zh: '创建的播放列表', ru: 'Созданные плейлисты' },
+  'チャンネルを読み込めませんでした: ': { en: 'Could not load channel: ', zh: '无法加载频道：', ru: 'Не удалось загрузить канал: ' },
+  '再生リストIDが不正です': { en: 'Invalid playlist ID', zh: '播放列表 ID 无效', ru: 'Неверный ID плейлиста' },
+  '本の動画': { en: ' videos', zh: '个视频', ru: ' видео' },
+  '（ミックス）': { en: ' (mix)', zh: '（混合）', ru: ' (микс)' },
+  '再生リストを読み込めませんでした: ': { en: 'Could not load playlist: ', zh: '无法加载播放列表：', ru: 'Не удалось загрузить плейлист: ' },
+  'おすすめ': { en: 'Recommended', zh: '推荐', ru: 'Рекомендации' },
+  'おもしろ': { en: 'Funny', zh: '搞笑', ru: 'Смешное' },
+  '動物': { en: 'Animals', zh: '动物', ru: 'Животные' },
+  'コント': { en: 'Comedy', zh: '小品', ru: 'Скетчи' },
+  'ショート動画が見つかりません': { en: 'No Shorts found', zh: '未找到短视频', ru: 'Shorts не найдены' },
+  '読み込めませんでした': { en: 'Could not load', zh: '加载失败', ru: 'Не удалось загрузить' },
+  '登録': { en: 'Subscribe', zh: '订阅', ru: 'Подписаться' },
+  '詳細': { en: 'Details', zh: '详情', ru: 'Подробнее' },
+  '通常プレイヤーで開く': { en: 'Open in normal player', zh: '在普通播放器中打开', ru: 'Открыть в обычном плеере' },
+  '前の動画 (↑)': { en: 'Previous video (↑)', zh: '上一个视频 (↑)', ru: 'Предыдущее видео (↑)' },
+  '次の動画 (↓)': { en: 'Next video (↓)', zh: '下一个视频 (↓)', ru: 'Следующее видео (↓)' },
+  '履歴': { en: 'History', zh: '历史记录', ru: 'История' },
+  '履歴をすべて削除': { en: 'Clear all history', zh: '清空全部历史记录', ru: 'Очистить историю' },
+  '高く評価した動画': { en: 'Liked videos', zh: '点赞的视频', ru: 'Понравившиеся видео' },
+  '保存した動画': { en: 'Saved videos', zh: '保存的视频', ru: 'Сохранённые видео' },
+  '履歴はまだありません。': { en: 'No history yet.', zh: '暂无历史记录。', ru: 'Истории пока нет.' },
+  '高く評価した動画はまだありません。': { en: 'No liked videos yet.', zh: '暂无点赞的视频。', ru: 'Понравившихся видео пока нет.' },
+  '保存した動画はまだありません。': { en: 'No saved videos yet.', zh: '暂无保存的视频。', ru: 'Сохранённых видео пока нет.' },
+  '履歴を削除しました': { en: 'History cleared', zh: '历史记录已删除', ru: 'История очищена' },
+  '視聴履歴・高く評価した動画・保存した動画がここに表示されます。': { en: 'Your watch history, liked videos and saved videos appear here.', zh: '观看历史、点赞的视频和保存的视频都会显示在这里。', ru: 'Здесь появятся история просмотра, понравившиеся и сохранённые видео.' },
+  '最新の動画をチェック': { en: 'Check the latest videos', zh: '查看最新视频', ru: 'Смотрите новые видео' },
+  'チャンネルを登録すると、そのチャンネルの最新動画がここに表示されます。まずは検索してチャンネルを登録しましょう。': { en: 'Subscribe to channels and their latest videos will appear here. Search and subscribe to get started.', zh: '订阅频道后，其最新视频会显示在这里。先搜索并订阅吧。', ru: 'Подпишитесь на каналы — их новые видео появятся здесь. Начните с поиска и подписки.' },
+  '最新動画': { en: 'Latest videos', zh: '最新视频', ru: 'Новые видео' },
+  '動画が見つかりませんでした。': { en: 'No videos found.', zh: '未找到视频。', ru: 'Видео не найдены.' },
+  '頻道': { en: 'Channel', zh: '频道', ru: 'Канал' },
+  '外観とデータの一般的な設定': { en: 'General appearance & data settings', zh: '外观与数据的常规设置', ru: 'Общие настройки внешнего вида и данных' },
+  ' ・ インスタンス運用設定は管理者のみ': { en: ' · instance operations are admin-only', zh: ' · 实例运维设置仅管理员可改', ru: ' · настройки инстанса доступны только администратору' },
+  '管理者': { en: 'Admin', zh: '管理员', ru: 'Администратор' },
+  '外観': { en: 'Appearance', zh: '外观', ru: 'Внешний вид' },
+  'テーマ': { en: 'Theme', zh: '主题', ru: 'Тема' },
+  'システム': { en: 'System', zh: '跟随系统', ru: 'Система' },
+  'ライト': { en: 'Light', zh: '浅色', ru: 'Светлая' },
+  'ダーク': { en: 'Dark', zh: '深色', ru: 'Тёмная' },
+  '言語': { en: 'Language', zh: '语言', ru: 'Язык' },
+  'オート（システムに合わせる）': { en: 'Auto (match system)', zh: '自动（跟随系统）', ru: 'Авто (как в системе)' },
+  '言語はブラウザの言語設定から自動で切り替わります。': { en: 'Language is detected automatically from your browser settings.', zh: '语言会根据浏览器语言设置自动切换。', ru: 'Язык определяется автоматически по настройкам браузера.' },
+  '言語が変わっても、テーマはシステム設定と自動で同期します。': { en: 'The theme stays in sync with your system setting automatically.', zh: '主题会与系统设置自动保持同步。', ru: 'Тема автоматически синхронизируется с настройками системы.' },
+  '音声入力': { en: 'Voice input', zh: '语音输入', ru: 'Голосовой ввод' },
+  '検索バーのマイクから音声で検索できます。': { en: 'Use the microphone in the search bar to search by voice.', zh: '点击搜索栏的麦克风即可语音搜索。', ru: 'Используйте микрофон в строке поиска для голосового поиска.' },
+  'このブラウザでは音声入力を利用できません。': { en: 'Voice input is not available in this browser.', zh: '此浏览器不支持语音输入。', ru: 'Голосовой ввод недоступен в этом браузере.' },
+  'インスタンス協力メッシュ': { en: 'Instance cooperation mesh', zh: '实例协作网络', ru: 'Сеть сотрудничества инстансов' },
+  'デプロイされた Vandal は設定不要で自動的にメッシュへ参加し、生きているプロキシと健全性を共有します。訪問者には各インスタンスの URL は省略表記でしか表示されません。メッシュ参加の変更はデプロイ時の運用設定で管理され、利用者向け設定からは変更できません。': { en: 'Deployed Vandal instances join the mesh automatically, sharing live proxies and health with no configuration. Visitor-facing URLs are shown in abbreviated form only. Mesh settings are managed at deployment time and cannot be changed from user settings.', zh: '部署后的 Vandal 会自动加入协作网络，无需配置即可共享可用代理与健康状态。对访客仅显示实例 URL 的缩写形式。网络参与由部署时的运维设置管理，用户设置中无法更改。', ru: 'Развёрнутые инстансы Vandal автоматически присоединяются к сети и делятся живыми прокси и состоянием здоровья без настройки. URL инстансов показываются посетителям в сокращённом виде. Участие в сети управляется на этапе развёртывания и недоступно в пользовательских настройках.' },
+  'メッシュ状態を取得中…': { en: 'Fetching mesh status…', zh: '正在获取网络状态…', ru: 'Получаем состояние сети…' },
+  'メッシュ状態を取得できませんでした。': { en: 'Could not fetch mesh status.', zh: '无法获取网络状态。', ru: 'Не удалось получить состояние сети.' },
+  'メッシュ参加状態は管理用の環境変数または API で管理されています。': { en: 'Mesh participation is managed by deployment environment variables or the admin API.', zh: '网络参与状态由部署环境变量或管理 API 管理。', ru: 'Участие в сети управляется переменными окружения развёртывания или административным API.' },
+  'データ管理': { en: 'Data management', zh: '数据管理', ru: 'Управление данными' },
+  '履歴を全消去': { en: 'Clear history', zh: '清空历史记录', ru: 'Очистить историю' },
+  'セッションキャッシュを消去': { en: 'Clear session cache', zh: '清除会话缓存', ru: 'Очистить кэш сессии' },
+  'すべてのローカルデータを消去': { en: 'Clear all local data', zh: '清除所有本地数据', ru: 'Удалить все локальные данные' },
+  '履歴・高評価・保存・登録チャンネルは、この端末のブラウザ内にのみ保存されます。': { en: 'History, likes, saves and subscriptions are stored only in this browser on this device.', zh: '历史记录、点赞、收藏和订阅仅保存在本设备浏览器中。', ru: 'История, оценки, сохранения и подписки хранятся только в этом браузере на этом устройстве.' },
+  'Vandal について': { en: 'About Vandal', zh: '关于 Vandal', ru: 'О Vandal' },
+  'Vandal — 最速の動画体験を目指す、完全に独立したオープンプロジェクト。インスタンス協力メッシュで、起動中の各サイトが生きているプロキシと健全性を自動共有・分業します。': { en: 'Vandal — a completely independent open project aimed at the fastest video experience. The instance cooperation mesh automatically shares live proxies and health among running instances.', zh: 'Vandal — 一个完全独立的开源项目，致力于打造最快的视频体验。实例协作网络在各运行实例间自动共享可用代理与健康状态。', ru: 'Vandal — полностью независимый открытый проект, нацеленный на максимально быстрое воспроизведение видео. Сеть инстансов автоматически делится живыми прокси и состоянием здоровья.' },
+  '詳細・ドキュメントを見る': { en: 'See details & documentation', zh: '查看详情与文档', ru: 'Подробнее и документация' },
+  '履歴を消去しました': { en: 'History cleared', zh: '历史记录已清除', ru: 'История очищена' },
+  'キャッシュを消去しました': { en: 'Cache cleared', zh: '缓存已清除', ru: 'Кэш очищен' },
+  'すべてのローカルデータを消去しました': { en: 'All local data cleared', zh: '已清除所有本地数据', ru: 'Все локальные данные удалены' },
+  '消去に失敗しました': { en: 'Failed to clear', zh: '清除失败', ru: 'Не удалось очистить' },
+  '最速の、自己完結型の動画体験。': { en: 'The fastest, self-contained video experience.', zh: '最快、自给自足的视频体验。', ru: 'Самый быстрый и автономный видеопросмотр.' },
+  '🚀 Vandal とは': { en: '🚀 What is Vandal', zh: '🚀 什么是 Vandal', ru: '🚀 Что такое Vandal' },
+  'Vandal は、動画を可能な限り高速に再生するための自己完結型フロントエンドです。InnerTube 直結エンジン、認定プロキシによるダイレクト再生、そしてインスタンス協力メッシュを備えています。': { en: 'Vandal is a self-contained frontend for playing video as fast as possible. It features a direct InnerTube engine, direct playback via certified proxies, and an instance cooperation mesh.', zh: 'Vandal 是一个自给自足的前端，用于尽可能快地上播放视频。它具备 InnerTube 直连引擎、经认证代理的直连播放以及实例协作网络。', ru: 'Vandal — автономный фронтенд для максимально быстрого воспроизведения видео. В нём движок прямого подключения InnerTube, прямое воспроизведение через проверенные прокси и сеть сотрудничества инстансов.' },
+  '🌐 インスタンス協力メッシュ（自動参加・設定不要）': { en: '🌐 Instance cooperation mesh (auto-join, no config)', zh: '🌐 实例协作网络（自动加入·无需配置）', ru: '🌐 Сеть инстансов (автоподключение, без настройки)' },
+  'デプロイされた瞬間から、その URL は自動で「Vandal インスタンスリスト」に追加され、起動中のインスタンス同士が WebSocket（<code>/.vandal-mesh</code>）で相互接続。生きているプロキシと健全性（CPU・混み具合）を共有し、ティア（S/A/B/C）で自動選別した分業を行います: 上位ティアへのメタ取得の委譲、プロキシ収集のシャード分担、並列取得など。': { en: 'The moment it deploys, the URL is automatically added to the “Vandal instance list” and running instances interconnect over WebSocket (<code>/.vandal-mesh</code>), sharing live proxies and health (CPU, load). They divide work automatically by tier (S/A/B/C): delegating metadata fetching to top tiers, sharding proxy collection, and parallel fetching.', zh: '部署瞬间，URL 会自动加入“Vandal 实例列表”，运行中的实例通过 WebSocket（<code>/.vandal-mesh</code>）互联，共享可用代理与健康状态（CPU、负载）。按层级（S/A/B/C）自动分工：向高层级委派元数据获取、分片收集代理、并行获取等。', ru: 'Сразу после развёртывания URL автоматически попадает в «список инстансов Vandal», и работающие инстансы соединяются по WebSocket (<code>/.vandal-mesh</code>), делясь живыми прокси и здоровьем (CPU, нагрузка). Работа делится автоматически по тирам (S/A/B/C): делегирование получения метаданных верхним тирам, шардинг сбора прокси, параллельная загрузка.' },
+  '訪問者にはインスタンスの URL を省略表記でしか表示しません。混み具合・CPU・利用できるプロキシの数は <code>/health</code>（ダッシュボード）と <code>/api/health</code>（JSON）で確認でき、健全インスタンスが十分なときはさらに並列化して高速化します。': { en: 'Visitors only see abbreviated instance URLs. Load, CPU and available proxy counts are available at <code>/health</code> (dashboard) and <code>/api/health</code> (JSON); when enough healthy instances exist, fetching is parallelized further for speed.', zh: '访客只会看到实例 URL 的缩写形式。负载、CPU 与可用代理数量可在 <code>/health</code>（仪表盘）和 <code>/api/health</code>（JSON）查看；健康实例充足时会进一步并行化以提速。', ru: 'Посетители видят только сокращённые URL инстансов. Нагрузка, CPU и число доступных прокси — на <code>/health</code> (дашборд) и <code>/api/health</code> (JSON); при достаточном числе здоровых инстансов загрузка дополнительно распараллеливается.' },
+  '📡 デプロイ': { en: '📡 Deployment', zh: '📡 部署', ru: '📡 Развёртывание' },
+  'Render / Railway / Docker / Cloudflare Workers / Vercel など、さまざまな環境へ展開できます。各デプロイボタンは README に掲載しています。': { en: 'Deployable to Render, Railway, Docker, Cloudflare Workers, Vercel and more. Each deploy button is listed in the README.', zh: '可部署到 Render、Railway、Docker、Cloudflare Workers、Vercel 等多种环境。各部署按钮见 README。', ru: 'Развёртывается на Render, Railway, Docker, Cloudflare Workers, Vercel и других платформах. Кнопки развёртывания перечислены в README.' },
+  '⚖️ ライセンスと利用条件（絶対遵守）': { en: '⚖️ License & terms (mandatory)', zh: '⚖️ 许可证与使用条款（必须遵守）', ru: '⚖️ Лицензия и условия (обязательно)' },
+  'このプロジェクトをあなたの環境で自由に使用、デプロイ、または他者へ共有することを許可します。改変の禁止（絶対遵守）。': { en: 'You may freely use, deploy, or share this project in your environment. Modification is prohibited (mandatory).', zh: '允许在您的环境中自由使用、部署或分享本项目。禁止修改（必须遵守）。', ru: 'Разрешается свободно использовать, развёртывать и делиться этим проектом. Изменение кода запрещено (обязательно).' },
+  '本プロジェクトのソースコードや設計思想を保持するため、コードの改変は一切禁止とします。元の形を尊重し、配布・公開を行うよう強くお願いします。このプロジェクトを絶対に他プロジェクトのAPIや内部技術として利用しないでください。': { en: 'To preserve this project’s source code and design philosophy, any modification of the code is strictly prohibited. Please respect its original form when distributing or publishing it, and never use this project as another project’s API or internal technology.', zh: '为保持本项目的源代码与设计理念，严禁对代码进行任何修改。请在分发和发布时尊重其原有形态，切勿将本项目作为其他项目的 API 或内部技术使用。', ru: 'Чтобы сохранить исходный код и философию проекта, любые изменения кода строго запрещены. Пожалуйста, уважайте оригинальный вид при распространении и никогда не используйте проект как API или внутреннюю технологию другого проекта.' },
+  'ピア <b>{alive}</b> 台が起動中（健全 {healthy}）・共有プロキシ <b>{proxies}</b> 本・モード <b>{mode}</b>{self}': { en: '<b>{alive}</b> peers running ({healthy} healthy) · <b>{proxies}</b> shared proxies · mode <b>{mode}</b>{self}', zh: '<b>{alive}</b> 个节点运行中（健康 {healthy}）· <b>{proxies}</b> 个共享代理 · 模式 <b>{mode}</b>{self}', ru: 'Работает <b>{alive}</b> пиров ({healthy} здоровых) · общих прокси <b>{proxies}</b> · режим <b>{mode}</b>{self}' },
+  'プライベート': { en: 'Private', zh: '私密', ru: 'Приватный' },
+  '共同参加': { en: 'Shared', zh: '共同参与', ru: 'Общий' },
+  '自 URL <code>{url}</code>': { en: ' · self URL <code>{url}</code>', zh: ' · 自身 URL <code>{url}</code>', ru: ' · свой URL <code>{url}</code>' },
+  'このインスタンスはトークン運用です': { en: 'This instance uses token-based management', zh: '此实例使用令牌管理', ru: 'Этот инстанс управляется токеном' },
+  '設定の変更にはデプロイ時の環境変数 <code>VANDAL_ADMIN_TOKEN</code> を入力してロックを解除してください。': { en: 'Enter the deployment environment variable <code>VANDAL_ADMIN_TOKEN</code> to unlock settings changes.', zh: '请输入部署环境变量 <code>VANDAL_ADMIN_TOKEN</code> 以解锁设置修改。', ru: 'Введите переменную окружения <code>VANDAL_ADMIN_TOKEN</code>, чтобы разблокировать изменение настроек.' },
+  '管理トークン': { en: 'Admin token', zh: '管理令牌', ru: 'Админ-токен' },
+  '解除': { en: 'Unlock', zh: '解锁', ru: 'Разблокировать' },
+  '管理者が設定済みです': { en: 'An administrator is set', zh: '已设置管理员', ru: 'Администратор назначен' },
+  'インスタンスの運用設定は管理者だけが変更できます。管理トークンを持っている場合は入力してロックを解除してください。': { en: 'Only administrators can change instance operations settings. If you have the admin token, enter it to unlock.', zh: '实例运维设置仅管理员可修改。若持有管理令牌，请输入以解锁。', ru: 'Изменять настройки инстанса может только администратор. Если у вас есть токен, введите его для разблокировки.' },
+  'まだ管理者が設定されていません': { en: 'No administrator is set yet', zh: '尚未设置管理员', ru: 'Администратор ещё не назначен' },
+  'デプロイした人が最初に「管理権を取得」で所有権を確定できます（1 回だけ発行）。サーバーをローカルで開いている場合は自動的に管理者扱いです。': { en: 'The person who deploys can claim ownership once via “Claim admin”. Opening the server locally grants admin automatically.', zh: '部署者在首次可点“获取管理权限”确认所有权（仅发一次）。在本地打开服务器时自动视为管理员。', ru: 'Развернувший проект может один раз получить права через «Получить права администратора». При локальном запуске сервера админ назначается автоматически.' },
+  '管理権を取得': { en: 'Claim admin', zh: '获取管理权限', ru: 'Получить права' },
+  '管理権を取得しました': { en: 'Admin rights claimed', zh: '已获取管理权限', ru: 'Права получены' },
+  '取得できませんでした': { en: 'Could not acquire', zh: '获取失败', ru: 'Не удалось получить' },
+  'トークンを入力してください': { en: 'Enter the token', zh: '请输入令牌', ru: 'Введите токен' },
+  'トークンが正しくありません': { en: 'Incorrect token', zh: '令牌不正确', ru: 'Неверный токен' },
+  'ロックを解除しました': { en: 'Unlocked', zh: '已解锁', ru: 'Разблокировано' },
+  '最速 — 発行も中継も引き受ける主力': { en: 'Fastest — primary tier for issuing and relaying', zh: '最快 — 承接发行与中继的主力', ru: 'Самый быстрый — основная роль выпуска и ретрансляции' },
+  '健全 — メタ取得の委譲先として優先起用': { en: 'Healthy — preferred for delegated metadata fetching', zh: '健康 — 优先用作元数据委派', ru: 'Здоровый — приоритет для делегирования метаданных' },
+  '平常 — プロキシ収集と中継を担当': { en: 'Normal — handles proxy collection and relaying', zh: '正常 — 负责代理收集与中继', ru: 'Нормальный — сбор прокси и ретрансляция' },
+  '注意 — 負荷が高いか資源が不足（回復を待つ）': { en: 'Caution — high load or low resources (waiting to recover)', zh: '注意 — 负载高或资源不足（等待恢复）', ru: 'Внимание — высокая нагрузка или нехватка ресурсов (ждёт восстановления)' },
+  '日': { en: 'd', zh: '天', ru: 'д' },
+  '時間': { en: 'h', zh: '小时', ru: 'ч' },
+  '分': { en: 'm', zh: '分钟', ru: 'м' },
+  '秒': { en: 's', zh: '秒', ru: 'с' },
+  'プロキシ <b>{n}</b>': { en: 'Proxies <b>{n}</b>', zh: '代理 <b>{n}</b>', ru: 'Прокси <b>{n}</b>' },
+  '稼働 <b>{n}</b>': { en: 'Uptime <b>{n}</b>', zh: '运行 <b>{n}</b>', ru: 'Аптайм <b>{n}</b>' },
+  '匿名ピア': { en: 'Anonymous peer', zh: '匿名节点', ru: 'Анонимный пир' },
+  '🔒 プライベート参加（URL 非公開）': { en: '🔒 Private participation (URL hidden)', zh: '🔒 私密参与（URL 不公开）', ru: '🔒 Приватное участие (URL скрыт)' },
+  'URL 未確定（最初の公開アクセスで自動検出）': { en: 'URL pending (auto-detected on first public access)', zh: 'URL 未确定（首次公开访问时自动检测）', ru: 'URL не определён (определится при первом публичном доступе)' },
+  'このインスタンス': { en: 'This instance', zh: '此实例', ru: 'Этот инстанс' },
+  '匿名': { en: 'Anonymous', zh: '匿名', ru: 'Аноним' },
+  '● 稼働中': { en: '● Online', zh: '● 运行中', ru: '● Онлайн' },
+  '◌ 待機': { en: '◌ Standby', zh: '◌ 待机', ru: '◌ Ожидание' },
+  '状態を取得できませんでした': { en: 'Could not fetch status', zh: '无法获取状态', ru: 'Не удалось получить состояние' },
+  'サーバーが混み合っています。少し待ってから再試行してください。': { en: 'The server is busy. Please wait and try again.', zh: '服务器繁忙，请稍后重试。', ru: 'Сервер перегружен. Подождите и попробуйте снова.' },
+  '起動中の Vandal が自動で集まる協力メッシュ。健全性でティア分けされ、プロキシ収集とメタ取得を分業します。': { en: 'A cooperation mesh where running Vandal instances gather automatically, tiered by health, sharing proxy collection and metadata fetching.', zh: '运行中的 Vandal 自动汇聚的协作网络，按健康度分层，分工收集代理与获取元数据。', ru: 'Сеть сотрудничества, где работающие инстансы Vandal собираются автоматически, делятся на тиры по здоровью и распределяют сбор прокси и получение метаданных.' },
+  'score <b>{score}</b>/100 ・ピア <b>{peers}</b> 台と協力中 ・共有プロキシ <b>{proxies}</b> 本': { en: 'score <b>{score}</b>/100 · cooperating with <b>{peers}</b> peers · <b>{proxies}</b> shared proxies', zh: '评分 <b>{score}</b>/100 · 与 <b>{peers}</b> 个节点协作 · 共享代理 <b>{proxies}</b> 个', ru: 'балл <b>{score}</b>/100 · сотрудничает с <b>{peers}</b> пирами · общих прокси <b>{proxies}</b>' },
+  '🔒 プライベート': { en: '🔒 Private', zh: '🔒 私密', ru: '🔒 Приватный' },
+  '🌐 共同参加': { en: '🌐 Shared', zh: '🌐 共同参与', ru: '🌐 Общий' },
+  'ピアはまだいません。他の Vandal インスタンスがこのURLの <code>/.vandal-mesh</code> に接続すると自動で参加します。': { en: 'No peers yet. Other Vandal instances join automatically when they connect to this URL’s <code>/.vandal-mesh</code>.', zh: '暂无节点。其他 Vandal 实例连接到该 URL 的 <code>/.vandal-mesh</code> 后会自动加入。', ru: 'Пиров пока нет. Другие инстансы Vandal присоединяются автоматически, подключившись к <code>/.vandal-mesh</code> этого URL.' },
+  '自動分業': { en: 'Automatic division of labor', zh: '自动分工', ru: 'Автоматическое разделение труда' },
+  'メタ取得の委譲': { en: 'Metadata delegation', zh: '元数据委派', ru: 'Делегирование метаданных' },
+  'プロキシ収集の分担': { en: 'Proxy collection sharding', zh: '代理收集分担', ru: 'Шардинг сбора прокси' },
+  '並列ヘッジ': { en: 'Parallel hedging', zh: '并行对冲', ru: 'Параллельный хедж' },
+  'メタ取得の委譲</b> — 発行基盤が弱いとき、S/A ティアの健全ピアへ並行委譲（現在の委譲先: <b>{n}</b> 台）。': { en: '<b>Metadata delegation</b> — when issuance is weak, delegate in parallel to healthy S/A-tier peers (currently <b>{n}</b>).', zh: '<b>元数据委派</b> — 发行基础较弱时并行委派给 S/A 层健康节点（当前委派对象：<b>{n}</b> 个）。', ru: '<b>Делегирование метаданных</b> — при слабом выпуске параллельно делегируем здоровым пирам тиров S/A (сейчас: <b>{n}</b>).' },
+  'プロキシ収集の分担</b> — 候補リストをシャード分割して各インスタンスが別区間を実測し、成果を全員で共有（担当: <b>{index}</b>/<b>{count}</b>）。': { en: '<b>Proxy collection sharding</b> — the candidate list is split across instances, each measuring a different slice and sharing results (assigned: <b>{index}</b>/<b>{count}</b>).', zh: '<b>代理收集分担</b> — 将候选列表分片，各实例实测不同区间并共享成果（负责：<b>{index}</b>/<b>{count}</b>）。', ru: '<b>Шардинг сбора прокси</b> — список кандидатов делится между инстансами, каждый измеряет свой участок и делится результатами (назначено: <b>{index}</b>/<b>{count}</b>).' },
+  '並列ヘッジ</b> — 健全ピアが多いほど発行とコメント取得の当たり筋が増え、初速が伸びます（健全: <b>{n}</b> 台）。': { en: '<b>Parallel hedging</b> — more healthy peers means more attempts for issuance and comments, improving time-to-first-byte (<b>{n}</b> healthy).', zh: '<b>并行对冲</b> — 健康节点越多，发行与评论获取的命中率越高，首屏越快（健康：<b>{n}</b> 个）。', ru: '<b>Параллельный хедж</b> — чем больше здоровых пиров, тем больше попыток выпуска и комментариев, и тем быстрее первый байт (здоровых: <b>{n}</b>).' },
+  'プライバシーと管理': { en: 'Privacy & management', zh: '隐私与管理', ru: 'Приватность и управление' },
+  '訪問者には URL を省略表記でしか表示しません（共同作業の内部では完全な URL を使用）。運用モードの変更はデプロイした管理者のみが行えます — インスタンスの方針は訪問者ではなく所有者のものだからです。': { en: 'Visitors only see abbreviated URLs (full URLs are used internally for cooperation). Operating mode can only be changed by the deploying admin — an instance belongs to its owner, not its visitors.', zh: '对访客仅显示 URL 缩写形式（协作内部使用完整 URL）。运营模式仅可由部署的管理员更改 —— 实例属于所有者而非访客。', ru: 'Посетители видят только сокращённые URL (полные используются внутри для сотрудничества). Режим работы может менять только развернувший админ — инстанс принадлежит владельцу, а не посетителям.' },
+  '設定を開く': { en: 'Open settings', zh: '打开设置', ru: 'Открыть настройки' },
+  '/health ダッシュボード': { en: '/health dashboard', zh: '/health 仪表盘', ru: 'дашборд /health' },
+  'URL 未確定': { en: 'URL pending', zh: 'URL 未确定', ru: 'URL не определён' },
+  '削除': { en: 'Delete', zh: '删除', ru: 'Удалить' },
+  '視聴回数': { en: 'Views', zh: '播放次数', ru: 'Просмотры' },
+  '件': { en: 'items', zh: '条', ru: 'шт.' },
+};
+function i18nLangCode() {
+  const saved = Store.get('lang', 'auto');
+  if (saved && saved !== 'auto') return saved;
+  const nav = String((typeof navigator !== 'undefined' && navigator.language) || 'ja').toLowerCase();
+  if (nav.startsWith('ja')) return 'ja';
+  if (nav.startsWith('zh')) return 'zh';
+  if (nav.startsWith('ru')) return 'ru';
+  return 'en';
+}
+function currentLang() { return i18nLangCode(); }
+/** 日本語の UI 文字列を現在言語へ（辞書に無ければ原文を返す） */
+function T(jp) {
+  const lang = i18nLangCode();
+  if (lang === 'ja' || !jp) return jp;
+  const m = I18N_DICT[jp];
+  return (m && m[lang] != null) ? m[lang] : jp;
+}
+/** 変数入り: TF('返信 {n} 件', { n }) */
+function TF(jp, vars = {}) {
+  let s = T(jp);
+  for (const [k, v] of Object.entries(vars)) s = s.split('{' + k + '}').join(String(v));
+  return s;
+}
+function speechLangCode() {
+  return (I18N_LANGS.find(l => l.code === i18nLangCode()) || I18N_LANGS[0]).speech;
+}
+/** index.html の静的なラベル（data-i18n / data-i18n-ph / -title / -aria）へ適用 */
+function applyStaticI18n() {
+  document.documentElement.lang = i18nLangCode();
+  $$('[data-i18n]').forEach(el => { el.textContent = T(el.dataset.i18n || ''); });
+  $$('[data-i18n-ph]').forEach(el => el.setAttribute('placeholder', T(el.dataset.i18nPh || '')));
+  $$('[data-i18n-title]').forEach(el => el.setAttribute('title', T(el.dataset.i18nTitle || '')));
+  $$('[data-i18n-aria]').forEach(el => el.setAttribute('aria-label', T(el.dataset.i18nAria || '')));
+  try { document.title = T('ホーム') + ' - Vandal'; } catch (_) {}
+}
+function setLanguage(code) {
+  Store.set('lang', code || 'auto');
+  applyStaticI18n();
+  if (typeof document !== 'undefined') {
+    document.title = T('ホーム') + ' - Vandal';
+  }
+}
+window.T = T; window.TF = TF;
+
+/* ── 🎙 音声入力（検索バー / Ask パネル共通） ────────────────────────── */
+const Voice = {
+  active: false, rec: null, final: '',
+  isSupported() { return !!(window.SpeechRecognition || window.webkitSpeechRecognition); },
+  lang() { return speechLangCode(); },
+  /** btn に .listening を付け、input へ結果を流す。done(text) で送信等のフック */
+  start(btn, input, done) {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast(T('このブラウザは音声入力に対応していません')); return; }
+    if (Voice.active) { try { Voice.rec?.stop(); } catch (_) {} return; }
+    let rec;
+    try { rec = new SR(); } catch (_) { toast(T('このブラウザは音声入力に対応していません')); return; }
+    Voice.rec = rec; Voice.active = true; Voice.final = '';
+    rec.lang = Voice.lang();
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
+    rec.continuous = false;
+    if (btn) {
+      btn.classList.add('listening');
+      btn.setAttribute('aria-pressed', 'true');
+      btn.title = T('音声入力を開始…');
+    }
+    rec.onresult = (e) => {
+      let interim = '', finalText = '';
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      Voice.final = (finalText || interim).trim();
+      if (input) input.value = Voice.final;
+    };
+    const stopUI = () => {
+      Voice.active = false; Voice.rec = null;
+      if (btn) {
+        btn.classList.remove('listening');
+        btn.setAttribute('aria-pressed', 'false');
+        btn.title = T('音声検索');
+      }
+    };
+    rec.onend = () => { stopUI(); if (Voice.final && done) done(Voice.final); };
+    rec.onerror = (e) => {
+      stopUI();
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') toast(T('マイクの使用が許可されていません'));
+      else if (e.error !== 'aborted' && e.error !== 'no-speech') toast(T('もう一度お試しください'));
+    };
+    try { rec.start(); } catch (_) { stopUI(); }
+    if (btn) { btn.title = T('音声入力を開始…'); }
+    toast(T('音声入力を開始…'), 1600);
+  },
+};
+window.Voice = Voice;
+
 const fmtDur = (sec) => {
   sec = Math.max(0, Math.floor(sec));
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -284,7 +633,7 @@ function loadHls() {
  *     ラスター画像を落としていた旧実装とは違い、全ページ共通で 1KB 未満） ---- */
 const LOGO = (size = 40) => {
   const h = Math.max(28, Math.round(Number(size) * .75));
-  return `<img src="/logo.svg" alt="Vandal" class="brand-wordmark-img" style="--brand-size:${h}px; height:${h}px; width:auto; display:inline-block;" />`;
+  return `<img src="/logo.png" alt="Vandal" class="brand-wordmark-img" style="--brand-size:${h}px; height:${h}px; width:auto; display:inline-block;" />`;
 };
 
 /* infinite scroll helper */

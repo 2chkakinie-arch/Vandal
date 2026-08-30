@@ -3,7 +3,7 @@
 Cloudflare には Node サーバー（InnerTube エンジン/プロキシ中継/SSE）はそのまま
 載せられないため、**「オリジン(Render/Railway 等の Node+Go 構成) + Cloudflare
 Worker のエッジキャッシュ」**という 2 層構成にします。SPA シェルの静的ファイル
-（`/app.js` `/styles.css` `/logo.svg` など）は Cloudflare の世界中の PoP から
+（`/app.js` `/styles.css` `/logo.png` など）は Cloudflare の世界中の PoP から
 即時配信され、初回表示が大きく速くなります。
 
 - キャッシュ対象: `GET` かつ静的拡張子のパスで、オリジン応答の

@@ -81,15 +81,41 @@ sInput.addEventListener('keydown', (e) => {
   } else if (e.key === 'Escape') sBox.classList.add('hidden');
 });
 
-/* ============================================================ テーマ / ナビ */
-function applyTheme(dark, { save = true } = {}) {
+/* ================================================= テーマ（システム追従）/ ナビ */
+function themeMode() {
+  try { return localStorage.getItem('vandal-theme') || 'system'; } catch (_) { return 'system'; }
+}
+/** mode: 'system' | 'light' | 'dark' — 既定はシステム追従。ヘッダー切替ボタンは廃止し、設定から変更。 */
+function applyTheme(mode, { save = true } = {}) {
+  mode = (mode || themeMode());
+  const dark = mode === 'dark' || (mode !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.classList.toggle('dark', !!dark);
   document.body.classList.toggle('dark', !!dark);
-  if (save) { try { localStorage.setItem('vandal-theme', dark ? 'dark' : 'light'); } catch (_) {} }
+  document.documentElement.dataset.theme = mode;
+  if (save) { try { localStorage.setItem('vandal-theme', mode); } catch (_) {} }
   $('meta[name=theme-color]')?.setAttribute('content', dark ? '#0f0f0f' : '#ffffff');
 }
-$('#theme-toggle').addEventListener('click', () => {
-  applyTheme(!document.documentElement.classList.contains('dark'));
+try {
+  const mql = matchMedia('(prefers-color-scheme: dark)');
+  const onScheme = () => { if (themeMode() === 'system') applyTheme('system', { save: false }); };
+  mql.addEventListener?.('change', onScheme);
+  if (!mql.addEventListener) mql.addListener?.(onScheme);
+} catch (_) {}
+
+/* ================================================= 🌐 言語（自動切替）初期化 */
+applyStaticI18n();
+try {
+  const onLang = () => { if (Store.get('lang', 'auto') === 'auto') { applyStaticI18n(); render(); } };
+  window.addEventListener?.('languagechange', onLang);
+} catch (_) {}
+
+/* ================================================= 🎙 音声入力（検索バー） */
+$('#mic-btn')?.addEventListener('click', () => {
+  Voice.start($('#mic-btn'), $('#search-input'), (text) => {
+    if (!text) return;
+    Searches.add(text);
+    location.hash = '/results?search_query=' + encodeURIComponent(text);
+  });
 });
 
 /* ナビゲーションドロワー — 既定は「閉じた」状態。開閉状態は記憶するが、

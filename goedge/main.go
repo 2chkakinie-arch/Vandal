@@ -1,7 +1,7 @@
 // Command vandal-edge — Go accelerator front for the Vandal Node backend.
 //
 // 役割（Go 基盤による高速化レイヤー）:
-//   - SPA シェルの静的アセット（/index.html, /app.js, /styles.css, /logo.svg,
+//   - SPA シェルの静的アセット（/index.html, /app.js, /styles.css, /logo.png,
 //     /vendor/hls.min.js）を起動時に Node バックエンドから 1 回だけ取り込み、
 //     メモリ上に「生バイト + gzip 事前圧縮バイト」の両方を保持して即座に配信する
 //     （リクエストごとの fs stat / gzip 圧縮 CPU を完全に無くす）。
@@ -105,7 +105,7 @@ var assetPaths = []string{
 	"/index.html",
 	"/app.js",
 	"/styles.css",
-	"/logo.svg",
+	"/logo.png",
 	"/vendor/hls.min.js",
 }
 

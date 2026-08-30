@@ -3,7 +3,7 @@
  * smoke-edge.js — Go エッジ統合テスト（ネットワーク外部依存なし）
  *
  * 検証すること（＝「バグ・速度低下・挙動差分ゼロ」の機械的な保証）:
- *   A. エッジ経由と Node 直配信で /, /app.js, /styles.css, /logo.svg,
+ *   A. エッジ経由と Node 直配信で /, /app.js, /styles.css, /logo.png,
  *      /vendor/hls.min.js, SPA フォールバック, /api/* の応答が一致する
  *   B. エッジの gzip 事前圧縮が正しく（Accept-Encoding 交渉・復元一致）
  *   C. ETag → 304 条件付き応答・Range 要求の素通し（206 parity）
@@ -133,7 +133,7 @@ async function main() {
   }, 'assets loaded to edge memory');
 
   /* --- A. コンテンツ parity（identity で byte 一致） --- */
-  const parityPaths = ['/', '/app.js', '/styles.css', '/logo.svg', '/vendor/hls.min.js', '/watch?v=abcdefghijk'];
+  const parityPaths = ['/', '/app.js', '/styles.css', '/logo.png', '/vendor/hls.min.js', '/watch?v=abcdefghijk'];
   for (const p of parityPaths) {
     const [d, e] = await Promise.all([
       req(BACK_PORT, p, { headers: { 'Accept-Encoding': 'identity' } }),
@@ -161,8 +161,8 @@ async function main() {
   check('edge ETag If-None-Match -> 304', inm.status === 304);
 
   const [rangeDirect, rangeEdge] = await Promise.all([
-    req(BACK_PORT, '/logo.svg', { headers: { Range: 'bytes=0-9', 'Accept-Encoding': 'identity' } }),
-    req(EDGE_PORT, '/logo.svg', { headers: { Range: 'bytes=0-9', 'Accept-Encoding': 'identity' } }),
+    req(BACK_PORT, '/logo.png', { headers: { Range: 'bytes=0-9', 'Accept-Encoding': 'identity' } }),
+    req(EDGE_PORT, '/logo.png', { headers: { Range: 'bytes=0-9', 'Accept-Encoding': 'identity' } }),
   ]);
   check('Range request proxied with parity (206)', rangeDirect.status === rangeEdge.status && rangeDirect.body.equals(rangeEdge.body),
     `status direct=${rangeDirect.status} edge=${rangeEdge.status}`);

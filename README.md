@@ -1,7 +1,7 @@
 # Vandal
 
 <p align="center">
-  <img src="public/logo.svg" alt="Vandal" width="360" />
+  <img src="public/logo.png" alt="Vandal" width="360" />
 </p>
 
 _超高速・自己完結型の動画フロントエンド。InnerTube 直結エンジン + 認定プロキシ・ダイレクト再生 + インスタンス協力メッシュ。_

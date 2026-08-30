@@ -39,7 +39,7 @@ function railCard(it) {
     return `
     <div class="rcard" data-href="#/shorts/${esc(it.id)}" data-vid="${esc(it.id)}">
       <div class="vthumb"><img loading="lazy" src="${esc(thumbUrl(it))}" alt="">
-        <span class="dur" style="background:rgba(0,0,0,.8)">ショート</span>
+        <span class="dur" style="background:rgba(0,0,0,.8)">${T('ショート')}</span>
       </div>
       <div class="vinfo">
         <div class="vtitle">${esc(it.title)}</div>
@@ -77,7 +77,7 @@ function shortsShelf(shorts, { compact = false } = {}) {
   if (!shorts?.length) return '';
   return `
   <div class="shorts-row ${compact ? 'compact' : ''}">
-    <div class="shorts-title">${ICON_SHORTS}ショート</div>
+    <div class="shorts-title">${ICON_SHORTS}${T('ショート')}</div>
     <div class="shorts-scroll">${shorts.map(s => shortCard(s)).join('')}</div>
   </div>`;
 }
@@ -86,13 +86,13 @@ function playlistCard(it) {
   return `
   <div class="vcard" data-href="#${(it.url || '/playlist?list=' + it.id).replace(/^#?/, '')}">
     <div class="vthumb"><img loading="lazy" src="${esc(thumbUrl(it))}" alt="">
-      <span class="pl-strip"><svg viewBox="0 0 24 24" class="ic"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm13-8v9l7-4.5z"/></svg>${esc(it.count || '再生リスト')}</span>
+      <span class="pl-strip"><svg viewBox="0 0 24 24" class="ic"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm13-8v9l7-4.5z"/></svg>${esc(it.count || T('再生リスト'))}</span>
     </div>
     <div class="vmeta">
       <div class="vinfo">
         <div class="vtitle">${esc(it.title)}</div>
         <div class="vsub">${esc(it.channel || '')}</div>
-        <div class="vsub">再生リストをすべて見る</div>
+        <div class="vsub">${T('再生リストをすべて見る')}</div>
       </div>
     </div>
   </div>`;
@@ -105,13 +105,13 @@ function playlistRow(it) {
   return `
   <div class="result-card" data-href="#${esc(href)}">
     <div class="vthumb"><img loading="lazy" src="${esc(thumbUrl(it))}" alt="">
-      <span class="pl-strip"><svg viewBox="0 0 24 24" class="ic"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm13-8v9l7-4.5z"/></svg>${esc(count || '再生リスト')}</span>
+      <span class="pl-strip"><svg viewBox="0 0 24 24" class="ic"><path d="M3 6h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm13-8v9l7-4.5z"/></svg>${esc(count || T('再生リスト'))}</span>
     </div>
     <div class="vinfo result-info">
       <div class="vtitle">${esc(it.title)}</div>
-      <div class="pl-kind">再生リスト</div>
+      <div class="pl-kind">${T('再生リスト')}</div>
       ${it.channel ? `<div class="result-ch" style="margin-top:2px"><span>${esc(it.channel)}</span></div>` : ''}
-      <div class="result-sub" style="margin-top:10px">再生リストをすべて見る</div>
+      <div class="result-sub" style="margin-top:10px">${T('再生リストをすべて見る')}</div>
     </div>
   </div>`;
 }
@@ -126,7 +126,7 @@ function channelRow(it) {
         <div class="vsub">${[esc(it.subs || ''), esc(it.videos || '')].filter(Boolean).join(' • ')}</div>
         <div class="vsub" style="margin-top:6px">${esc(it.description || '')}</div>
       </div>
-      <button class="sub-btn" style="flex:none">チャンネル登録</button>
+      <button class="sub-btn" style="flex:none">${T('チャンネル登録')}</button>
     </div>
   </div>`;
 }
@@ -157,7 +157,7 @@ function storedCard(h, { onRemove } = {}) {
         <div class="vtitle">${esc(h.t || h.v)}</div>
         <div class="vsub">${esc(h.cn || '')}</div>
       </div>
-      ${onRemove ? `<button class="icon-btn stored-del" data-del-hist="${esc(h.v)}" title="履歴から削除"><svg viewBox="0 0 24 24" class="ic"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button>` : ''}
+      ${onRemove ? `<button class="icon-btn stored-del" data-del-hist="${esc(h.v)}" title="${T('履歴から削除')}"><svg viewBox="0 0 24 24" class="ic"><path d="M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z"/></svg></button>` : ''}
     </div>
   </div>`;
 }
@@ -195,7 +195,7 @@ document.addEventListener('click', (e) => {
   if (del) {
     e.stopPropagation();
     History.remove(del.dataset.delHist);
-    toast('履歴から削除しました');
+    toast(T('履歴から削除しました'));
     render();
     return;
   }
@@ -276,7 +276,7 @@ function errBox(msg, retryFn) {
   app.innerHTML = `<div class="error-box">
     <p style="font-size:44px;margin-bottom:8px">:(</p>
     <p>${esc(msg)}</p>
-    <button class="retry" id="err-retry">再試行</button>
+    <button class="retry" id="err-retry">${T('再試行')}</button>
   </div>`;
   $('#err-retry')?.addEventListener('click', retryFn);
 }
