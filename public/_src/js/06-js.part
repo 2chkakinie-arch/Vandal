@@ -230,6 +230,13 @@ function renderShort(firstId) {
     $('#shp-ava').innerHTML = '';
     $('#shp-likes').textContent = '';
     $('#shp-cmcount').textContent = '';
+    // 高速化: セッションスナップショットがあればタイトル/チャンネルを即描画
+    const ws = WatchSnap.get(id);
+    if (ws) {
+      $('#shp-title').textContent = ws.title || m.title || '';
+      if (ws.channel) $('#shp-chname').textContent = ws.channel;
+      if (ws.avatar) $('#shp-ava').innerHTML = `<img src="${esc(ws.avatar)}" alt="">`;
+    }
     showSpin(true);
     try {
       video.removeAttribute('src'); video.load();
@@ -251,6 +258,10 @@ function renderShort(firstId) {
       const subbed = Subs.has(d.channel?.id);
       const sb = $('#shp-sub');
       if (sb) { sb.textContent = subbed ? '登録済み' : '登録'; sb.classList.toggle('subbed', !!subbed); }
+      WatchSnap.save(id, {
+        title: d.title || '', channel: d.channel?.name || '', views: d.viewCount || '',
+        avatar: d.channel?.avatar || '', likeCount: d.likeCount || '', ts: Date.now(),
+      });
     }).catch(() => {});
     History.add(entry());
     // 次の1本を温める（スクロールした瞬間に再生が始まるように）

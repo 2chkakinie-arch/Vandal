@@ -40,7 +40,7 @@ func newTestEdge(t *testing.T) (*httptest.Server, *config, *assetStore, *puller)
 			w.Header().Set("Content-Type", "text/css; charset=utf-8")
 			w.Header().Set("Cache-Control", "public, max-age=3600")
 			io.WriteString(w, css)
-		case "/logo.png", "/logo.svg", "/vendor/hls.min.js":
+		case "/logo.svg", "/vendor/hls.min.js":
 			w.Header().Set("Content-Type", "application/octet-stream")
 			io.WriteString(w, "binary-bytes")
 		case "/echo-method":
