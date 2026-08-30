@@ -67,7 +67,7 @@ input { font-family: inherit; }
 .icon-btn:active { background: var(--hover-2); }
 .logo { display: flex; align-items: flex-start; padding: 8px 14px 8px 16px; margin-left: -8px; }
 .logo-svg { width: 88px; height: 24px; color: var(--text); overflow: visible; }
-.logo-mark { filter: drop-shadow(0 2px 5px rgba(255, 0, 0, .38)); }
+.logo-mark { filter: drop-shadow(0 2px 8px rgba(255, 43, 214, .45)); }
 .logo .country { font-size: 10px; color: var(--text-2); margin: 1px 0 0 2px; }
 
 /* search */
