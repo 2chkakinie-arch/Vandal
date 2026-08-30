@@ -184,13 +184,6 @@ function renderSettings() {
         ${c === null ? `<div class="adm-area"><div class="mini-spin"></div></div>` : isAdmin ? `
         <div class="set-actions" style="flex-direction:column;align-items:flex-start;gap:14px;margin-top:16px">
           <div>
-            <div class="set-note" style="margin:0 0 6px"><b>参加モード</b>（プライベート = 自 URL を共有せず匿名参加）</div>
-            <div class="seg seg-sm" id="cfg-mesh-mode" style="max-width:420px">
-              <button data-v="public">共同参加（既定）</button>
-              <button data-v="private">プライベート</button>
-            </div>
-          </div>
-          <div>
             <div class="set-note" style="margin:0 0 6px"><b>メッシュ参加</b>（無効で完全単独運用）</div>
             <div class="seg seg-sm" id="cfg-mesh-enabled" style="max-width:420px">
               <button data-v="on">参加する</button>
@@ -236,10 +229,8 @@ function renderSettings() {
 
     /* ---- 管理者: メッシュ設定（data/config.json へ永続化） ---- */
     if (isAdmin) {
-      const meshModeSeg = $('#cfg-mesh-mode');
       const meshEnabledSeg = $('#cfg-mesh-enabled');
       const syncMeshSegs = () => {
-        meshModeSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'private') === !!c.meshPrivate));
         meshEnabledSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'on') === !!c.meshEnabled));
       };
       syncMeshSegs();
@@ -255,11 +246,6 @@ function renderSettings() {
           toast('変更に失敗しました');
         }
       };
-      meshModeSeg.addEventListener('click', (e) => {
-        const b = e.target.closest('button[data-v]');
-        if (!b) return;
-        saveMesh({ meshPrivate: b.dataset.v === 'private' }, b.dataset.v === 'private' ? 'プライベートインスタンスに切り替えました' : '共同参加モードに切り替えました');
-      });
       meshEnabledSeg.addEventListener('click', (e) => {
         const b = e.target.closest('button[data-v]');
         if (!b) return;
@@ -460,7 +446,6 @@ function renderInstances() {
         </div>
         <div class="iss-right">
           <span class="mode-pill ${mode ? 'priv' : 'pub'}">${mode ? '🔒 プライベート' : '🌐 共同参加'}</span>
-          ${isAdmin ? `<button class="set-btn" id="inst-mode-toggle">${mode ? '公開参加にする' : 'プライベートにする'}</button>` : ''}
         </div>
       </div>
 
