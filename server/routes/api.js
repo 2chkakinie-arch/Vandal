@@ -1,7 +1,7 @@
 'use strict';
 /** Core API routes (home / search / watch / comments / channel / playlist). */
 const express = require('express');
-const { wrap, warmDefault, warmComments } = require('./helpers');
+const { wrap, warmDefault, warmComments, warmFeed } = require('./helpers');
 const { proxyManager } = require('../proxies');
 const { logbus } = require('../logbus');
 const { engineConfig } = require('../config');
@@ -30,6 +30,9 @@ router.get('/api/home', wrap(async (req, res) => {
   const t0 = Date.now();
   const out = await it.home(chip);
   logbus.info('http', 'GET /api/home', { chip, ms: Date.now() - t0, items: out.items?.length || 0 });
+  // 高速化（超高速化）: リスト先頭の動画を裏で先読みし、クリック時の再生開始を
+  // メモリから即時に（ストリームマップ + 冒頭チャンクを RAM 保温）。fire-and-forget。
+  if (out.items?.length) warmFeed(out.items.map((i) => i.id).filter(Boolean)).catch(() => {});
   res.json(out);
 }));
 

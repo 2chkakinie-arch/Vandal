@@ -262,3 +262,75 @@ html.dark .set-card:hover { border-color: rgba(91, 141, 255, .4); }
 /* ---- 細部: スクロールバー / 選択 ---- */
 ::-webkit-scrollbar-thumb { background: rgba(91, 141, 255, .35); }
 ::selection { background: rgba(91, 141, 255, .28); }
+
+/* =====================================================================
+   設定ページ — 落ち着いた高級感（カーム・ラグジュアリー再設計）
+   派手なブルーグラデ・ネオングローを排し、「墨（インク）+ シャンパンゴールド」
+   の単一アクセントで静かな高級感を演出。ライト / ダーク両対応。
+   スコープは .set-page 内のみ（他ページの配色は変えない）。
+   ===================================================================== */
+:root {
+  --lux-gold: #b8985a;          /* シャンパンゴールド（ライト） */
+  --lux-gold-strong: #9a7c3e;
+  --lux-gold-text: #e9dfc4;      /* インクボタン上の温かいアイボリー文字 */
+  --lux-ink-1: #1b1e25;
+  --lux-ink-2: #242832;
+}
+html.dark {
+  --lux-gold: #c8a96b;          /* シャンパンゴールド（ダーク） */
+  --lux-gold-strong: #b3924f;
+  --lux-gold-text: #efe3c6;
+  --lux-ink-1: #14161b;
+  --lux-ink-2: #1d2129;
+}
+
+/* タイトル: ブルーグラデ文字を廃止 → 単色インク（落ち着き） */
+.set-page .set-head h1 {
+  background: none; -webkit-background-clip: initial; background-clip: initial;
+  -webkit-text-fill-color: currentColor; color: var(--text);
+  font-weight: 800;
+}
+
+/* カード: ブルー光沢を排し、細いヘアライン + 静かなシャドウのみ */
+.set-page .set-card { box-shadow: var(--shadow); }
+.set-page .set-card:hover { border-color: var(--border); box-shadow: var(--shadow); }
+.set-page .set-card-glow::after {
+  background: linear-gradient(120deg, rgba(184,152,90,0), rgba(184,152,90,.12), rgba(200,169,107,.09), transparent);
+  opacity: 1;
+}
+
+/* ボタン: インク + ゴールドヘアライン。ネオングローなし */
+.set-page .set-btn { border: 1px solid var(--border); background: var(--bg-elev); color: var(--text); }
+.set-page .set-btn:hover { border-color: rgba(184,152,90,.45); box-shadow: 0 4px 14px rgba(0,0,0,.10); transform: translateY(-1px); }
+.set-page .set-btn.primary {
+  background: linear-gradient(180deg, var(--lux-ink-2), var(--lux-ink-1));
+  color: var(--lux-gold-text);
+  border: 1px solid rgba(184,152,90,.5);
+  box-shadow: none;
+}
+.set-page .set-btn.primary:hover {
+  border-color: rgba(200,169,107,.85);
+  background: linear-gradient(180deg, #2a2f39, var(--lux-ink-2));
+  box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  filter: none;
+}
+.set-page .set-btn.warn {
+  background: rgba(245,158,11,.12); color: #b07a16;
+  border-color: rgba(245,158,11,.28);
+}
+.set-page .set-btn.warn:hover { background: rgba(245,158,11,.18); box-shadow: none; }
+
+/* テーマ / 言語セグメントの選択: ブルーグラデ → インク + ゴールド */
+.set-page .seg button.sel {
+  background: linear-gradient(180deg, var(--lux-ink-2), var(--lux-ink-1));
+  color: var(--lux-gold-text);
+  border: 1px solid rgba(184,152,90,.45);
+  box-shadow: 0 2px 8px rgba(0,0,0,.14);
+}
+
+/* 管理者バッジ: 派手なシアンブルー → 落ち着いたシャンパンゴールド */
+.set-page .adm-pill {
+  color: #1a140a;
+  background: linear-gradient(90deg, #cdb079, #a9873f);
+  box-shadow: none;
+}

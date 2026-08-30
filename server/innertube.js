@@ -758,6 +758,11 @@ function pickDirect(p) {
  * 抱え込んで返し続ける事故を防ぐ（失敗は必ずライブで再挑戦する）。
  */
 const _vfPending = new Map();
+/** 高速化（超高速化）: 完全版の鮮度 90 秒が切れた直後も、最大 VF_SWR_GRACE の間は
+ * 「古い値を即返し + 裏で静かに再構築」する。再訪問（数分以内）のメタ取得は常に
+ * キャッシュヒット相当で瞬時になり、バックグラウンドの再構築で鮮度も保たれる。 */
+const VF_TTL = 90 * 1000;
+const VF_SWR_GRACE = 120 * 1000;
 async function getVideoFull(videoId, opts = {}) {
   const key = 'vf:' + videoId + (opts.playlistId ? ':' + opts.playlistId : '');
   if (!opts.fresh) {
@@ -765,6 +770,21 @@ async function getVideoFull(videoId, opts = {}) {
     if (hit !== undefined) return hit;
     const inflight = _vfPending.get(key);
     if (inflight) return inflight;
+    // 期限切れでも grace 内なら即返し（SWR）。同じ動画への並行再構築は 1 本に束ねる。
+    const expired = caches.api.getExpired(key);
+    if (expired && expired.age <= VF_SWR_GRACE) {
+      if (!_vfPending.has(key)) {
+        const job = getVideoFullUncached(videoId, opts)
+          .then((out) => {
+            _vfPending.delete(key);
+            if (out?.playable && !out.metaIncomplete) caches.api.set(key, out, VF_TTL);
+            return out;
+          })
+          .catch((e) => { _vfPending.delete(key); throw e; });
+        _vfPending.set(key, job);
+      }
+      return expired.value;
+    }
   }
   const p = getVideoFullUncached(videoId, opts)
     .then((out) => {
@@ -772,7 +792,7 @@ async function getVideoFull(videoId, opts = {}) {
       // 成功かつ完全な応答だけ 90 秒キャッシュ。metaIncomplete（watchNext 打ち切り）は
       // キャッシュせず、次回リクエストでは裏で完了した watchNext キャッシュに乗って
       // 完全版が組み立て直される。
-      if (out?.playable && !out.metaIncomplete) caches.api.set(key, out, 90 * 1000);
+      if (out?.playable && !out.metaIncomplete) caches.api.set(key, out, VF_TTL);
       return out;
     })
     .catch((e) => { _vfPending.delete(key); throw e; });
