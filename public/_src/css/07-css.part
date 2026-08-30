@@ -9,7 +9,7 @@
 .inst-hero {
   display: flex; align-items: center; gap: 16px; padding: 6px 6px 22px;
 }
-.inst-hero .brand-mark { border-radius: 13px; flex: none; box-shadow: 0 6px 18px rgba(91, 141, 255, .28); }
+.inst-hero .brand-wordmark { --word-size: 30px; flex: none; }
 .inst-hero-txt h1 { font-size: 24px; font-weight: 800; letter-spacing: -.4px; }
 .inst-hero-txt p { font-size: 13px; color: var(--text-2); margin-top: 3px; line-height: 1.6; max-width: 640px; }
 .inst-skeleton { padding: 48px 0; display: grid; place-items: center; }

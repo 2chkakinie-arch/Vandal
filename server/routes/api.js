@@ -168,20 +168,24 @@ router.get('/api/resolve/:target', wrap(async (req, res) => {
  * 環境変数 VANDAL_MESH_PRIVATE=1 / VANDAL_MESH=0 も引き続き初期値として効く。 */
 const adminGate = require('../admin');
 
+function settingsMeshSummary() {
+  return {
+    mode: mesh.isPrivate ? 'private' : 'public',
+    enabled: !!engineConfig.get('meshEnabled'),
+    aliveCount: mesh.peerCount(),
+    healthyPeers: mesh.healthyPeerCount(),
+    shareProxies: proxyManager.shareCount(40),
+    selfUrl: mesh.selfUrl || null,
+  };
+}
+
 router.get('/api/settings', (req, res) => {
   const c = engineConfig.get();
   res.json({
     ...c,
     admin: adminGate.isAdmin(req),          // このクライアントが設定を書けるか
     adminStatus: adminGate.status(),        // 未クラーム / env 運用 / クラーム済み
-    mesh: {                                  // 軽量サマリ（旧: 全ピア一覧を毎回構築していた）
-      mode: mesh.isPrivate ? 'private' : 'public',
-      enabled: !!engineConfig.get('meshEnabled'),
-      aliveCount: mesh.peerCount(),
-      healthyPeers: mesh.healthyPeerCount(),
-      shareProxies: require('../proxies').proxyManager.shareCount(40),
-      selfUrl: mesh.selfUrl || null,
-    },
+    mesh: settingsMeshSummary(),           // 軽量サマリ（旧: 全ピア一覧を毎回構築していた）
   });
 });
 router.post('/api/settings', wrap(async (req, res) => {
@@ -196,7 +200,7 @@ router.post('/api/settings', wrap(async (req, res) => {
     logbus.info('mesh', 'メッシュ設定を変更', { private: out.meshPrivate, enabled: out.meshEnabled });
     mesh.nudge?.();
   }
-  res.json({ ...out, admin: true });
+  res.json({ ...out, admin: true, mesh: settingsMeshSummary() });
 }));
 
 /* ---------------------------------------------------- admin claim / unlock */
