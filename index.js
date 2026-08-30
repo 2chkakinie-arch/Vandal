@@ -45,25 +45,32 @@ app.use((req, res, next) => mesh.learnFromRequest(req, res, next));
 // API
 app.use(router);
 
-// Static SPA assets
+// Static SPA assets（index.html は fingerprint 焼き込みテンプレートで配信 — 下記参照）
 const pub = path.join(__dirname, 'public');
+const bundle = require('./server/client-bundle');
 app.use(express.static(pub, {
-  index: 'index.html',
+  index: false,
   maxAge: '1h',
   setHeaders(res, filePath) {
-    if (/\.(js|css)$/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=3600');
-    if (/index\.html$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+    if (/\.(js|css|svg)$/.test(filePath)) res.setHeader('Cache-Control', 'public, max-age=86400');
   },
 }));
 
-// SPA fallback for any other GET (hash routing anyway, but keep URLs pretty)
+// SPA fallback for any other GET — index.html にはバンドル指纹（?v=）を焼き込んで
+// 配信し、再訪問の JS/CSS をブラウザ長期キャッシュでゼロ往復にする
 app.use((req, res, next) => {
   if (req.method !== 'GET' || req.path.startsWith('/api/')) return next();
-  res.sendFile(path.join(pub, 'index.html'));
+  // 拡張子付きの未存在パス（削除済みアセットの古いキャッシュ参照など）は
+  // SPA フォールバックに混ぜず 404 を返す（HTML 誤配信でブラウザを壊さない）
+  if (/\.(png|jpe?g|gif|webp|svg|ico|js|css|woff2?|ttf|map|json|txt|html?)$/i.test(req.path)) return next();
+  bundle.index(req, res);
 });
 
 // JSON 404 for unknown API routes
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found', code: 'NOT_FOUND' }));
+
+// 未存在の静的アセットはプレーン 404
+app.use((req, res) => res.status(404).type('text/plain').send('not found'));
 
 // Central error handler — never leak stack traces, never crash
 // eslint-disable-next-line no-unused-vars

@@ -769,7 +769,10 @@ async function getVideoFull(videoId, opts = {}) {
   const p = getVideoFullUncached(videoId, opts)
     .then((out) => {
       _vfPending.delete(key);
-      if (out?.playable) caches.api.set(key, out, 90 * 1000); // 成功のみ 90 秒
+      // 成功かつ完全な応答だけ 90 秒キャッシュ。metaIncomplete（watchNext 打ち切り）は
+      // キャッシュせず、次回リクエストでは裏で完了した watchNext キャッシュに乗って
+      // 完全版が組み立て直される。
+      if (out?.playable && !out.metaIncomplete) caches.api.set(key, out, 90 * 1000);
       return out;
     })
     .catch((e) => { _vfPending.delete(key); throw e; });
@@ -789,33 +792,45 @@ function localEngineWeak() {
   return proxyManager.pool.length < 8 || proxyManager.issuerCount() < 2;
 }
 
+/**
+ * watchNext（関連/概要/コメント）の応答上限。player 発行（再生に必須）の完了を
+ * 待たせないための防波堤 — これを超えたら「強化情報は裏で継続取得」として
+ * metaIncomplete 応答を返す（再生は即始まり、クライアントが裏リトライで追従）。
+ */
+const META_DEADLINE_MS = 4500;
+
 async function getVideoFullUncached(videoId, opts = {}) {
   // 委譲は裏で先行発火（並行）。自前成功時は破棄、失敗時のみ採用。
   const meshJob = (mesh.canDelegate && localEngineWeak())
     ? mesh.delegatePlayer(videoId).catch(() => null)
     : null;
-  const [pl, nx] = await Promise.allSettled([
-    player(videoId, opts.fresh ? { ...opts, fresh: true } : opts),
+  // 高速化（冷間タップの体感速度）: 旧実装は player と watchNext の両方が
+  // 終わるまで応答を保留していた（遅い方が全体を律速）。watchNext は
+  // 上限で打ち切り、player の結果だけで即応答を組み立てられるようにする。
+  const playerJob = player(videoId, opts.fresh ? { ...opts, fresh: true } : opts);
+  const nxJob = Promise.race([
     watchNext(videoId, opts),
+    sleep(META_DEADLINE_MS).then(() => null),
   ]);
+  const [pl, nx] = await Promise.allSettled([playerJob, nxJob]);
   if (pl.status === 'rejected' && nx.status === 'rejected') {
     if (meshJob) {
       const peer = await meshJob;
       if (peer?.__urlMap) {
         logbus.info('mesh', '自前発行失敗 → ピアの発行結果を採用', { v: videoId, source: peer.source || 'peer' });
         const nxVal = nx.status === 'fulfilled' ? nx.value : null;
-        return assembleVideoFull(videoId, peer, nxVal, pl.reason);
+        return assembleVideoFull(videoId, peer, nxVal, pl.reason, !nxVal);
       }
     }
     throw pl.reason;
   }
   const p = pl.status === 'fulfilled' ? pl.value : null;
   const n = nx.status === 'fulfilled' ? nx.value : null;
-  return assembleVideoFull(videoId, p, n, pl.status === 'rejected' ? pl.reason : null);
+  return assembleVideoFull(videoId, p, n, pl.status === 'rejected' ? pl.reason : null, !n);
 }
 
 /** player 結果（自前 or ピア委譲 or Piped）と watchNext 結果を最終応答へ組み立てる共通出口。 */
-function assembleVideoFull(videoId, p, n, plReason) {
+function assembleVideoFull(videoId, p, n, plReason, metaIncomplete = false) {
   // ---- map エントリを先に確定（直結判定とリレー修復の両方がこれを使う）
   let mapEntry = null;
   if (p?.__urlMap) {
@@ -856,6 +871,7 @@ function assembleVideoFull(videoId, p, n, plReason) {
   }
   const out = {
     videoId,
+    metaIncomplete: !!metaIncomplete, // watchNext が打ち切られた → クライアントが裏リトライ
     title: n?.title || p?.title || '',
     description: n?.description || '',
     viewCount: n?.viewCount || (p?.viewCount ? Number(p.viewCount).toLocaleString('ja-JP') + ' 回視聴' : ''),

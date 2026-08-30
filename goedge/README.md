@@ -5,7 +5,7 @@ Vandal の配信基盤となる Go 製フロントサーバー。**標準ライ�
 
 ## 役割
 
-1. **静的シェルのメモリ配信**: `/` `/index.html` `/app.js` `/styles.css` `/logo.png`
+1. **静的シェルのメモリ配信**: `/` `/index.html` `/app.js` `/styles.css` `/logo.svg`
    `/vendor/hls.min.js` を起動時に Node バックエンドから取り込み、生バイトと
    gzip 事前圧縮バイト（BestSpeed = Node の level 1 相当）を保持して即時応答。
    ETag / Last-Modified / 条件付きリクエスト（304）対応。

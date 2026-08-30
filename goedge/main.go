@@ -106,7 +106,6 @@ var assetPaths = []string{
 	"/app.js",
 	"/styles.css",
 	"/logo.svg",
-	"/logo.png",
 	"/vendor/hls.min.js",
 }
 

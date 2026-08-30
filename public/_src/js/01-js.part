@@ -162,6 +162,33 @@ function storedCard(h, { onRemove } = {}) {
   </div>`;
 }
 
+/** カード DOM から動画メタを拾う（watch ページの即時描画用）。 */
+function cardMeta(card) {
+  const st = card.querySelector('.stitle')?.textContent?.replace(/\s+/g, ' ').trim();
+  if (st) { // ショートカード
+    return { title: st, channel: '', views: card.querySelector('.sviews')?.textContent?.trim() || '', duration: '', avatar: '' };
+  }
+  const title = card.querySelector('.vtitle')?.textContent?.replace(/\s+/g, ' ').trim() || '';
+  const channel = card.querySelector('.vch')?.textContent?.trim()
+    || card.querySelector('.result-ch')?.textContent?.trim()
+    || card.querySelector('.plp-tt')?.textContent?.trim()
+    || '';
+  let views = card.querySelector('.result-sub')?.textContent?.trim() || '';
+  if (!views) {
+    const subs = card.querySelectorAll('.vsub');
+    for (const s of [...subs].reverse()) {
+      const t = s.textContent?.trim();
+      if (t && t !== channel) { views = t; break; }
+    }
+  }
+  const ava = card.querySelector('.vava img, .r-ava img, .ch-ava img')?.getAttribute('src') || '';
+  return {
+    title, channel, views,
+    duration: card.querySelector('.dur')?.textContent?.trim() || '',
+    avatar: ava,
+  };
+}
+
 /* delegation for card clicks + hover prefetch */
 document.addEventListener('click', (e) => {
   const del = e.target.closest('[data-del-hist]');
@@ -191,6 +218,14 @@ document.addEventListener('click', (e) => {
       if (ids.length) shqSave(ids, meta);
     }
   }
+  // 高速化: タップした瞬間、カードが持っているメタ（タイトル/チャンネル/統計）を
+  // WatchSnap に仮保存。watch ページはサーバー往復を待たずにこれで即時描画する。
+  let vid = card.dataset.vid || '';
+  if (!/^[\w-]{11}$/.test(vid)) {
+    const m = String(card.dataset.href || '').match(/[?&]v=([\w-]{11})|\/shorts\/([\w-]{11})/);
+    vid = m ? (m[1] || m[2] || '') : '';
+  }
+  if (/^[\w-]{11}$/.test(vid)) WatchSnap.hint(vid, cardMeta(card));
   location.hash = card.dataset.href.startsWith('#') ? card.dataset.href.slice(1) : card.dataset.href;
 });
 // ---- 先読みプリフェッチ（メタ情報限界高速化）------------------------------

@@ -157,6 +157,32 @@ const PlCtx = {
   },
 };
 
+/** watch ページの即時描画用スナップショット（クリック時のカード情報 →
+ *   /api/watch 応答 → セッション内の再訪、の3段階で徐々にリッチになる）。
+ *   「動画をタップした瞬間にタイトル/チャンネル/統計が画面に出ている」状態を作る。
+ *   セッション内の再訪（戻る→もう一度タップ など）はネットワーク往復ゼロで描画し、
+ *   裏で最新に追従する（stale-while-revalidate）。 */
+const WatchSnap = {
+  key: (v) => 'wsv:' + v,
+  get(v) {
+    try {
+      const j = JSON.parse(sessionStorage.getItem(this.key(v)) || 'null');
+      if (j && j.title && j.ts && Date.now() - j.ts < 2 * 3600e3) return j;
+    } catch (_) { /* parse / quota */ }
+    return null;
+  },
+  save(v, d) {
+    if (!v || !d) return;
+    try { sessionStorage.setItem(this.key(v), JSON.stringify({ ts: Date.now(), ...d })); } catch (_) { /* quota */ }
+  },
+  /** カードの DOM から拾ったメタを仮保存（完全な応答がまだ無いときだけ）。 */
+  hint(v, m) {
+    if (!v || !m || !m.title) return;
+    if (this.get(v)) return; // 完全版があれば上書きしない
+    this.save(v, m);
+  },
+};
+
 /** preference profile inferred from history + likes + searches */
 function buildProfile() {
   const hist = History.list();
@@ -254,10 +280,11 @@ function loadHls() {
   return _hlsP;
 }
 
-/* ---- ブランドワードマーク（スプレーアートロゴ画像・文字のみ） ---- */
+/* ---- ブランドワードマーク（軽量ベクターロゴ — ページごとに数百KBの
+ *     ラスター画像を落としていた旧実装とは違い、全ページ共通で 1KB 未満） ---- */
 const LOGO = (size = 40) => {
   const h = Math.max(28, Math.round(Number(size) * .75));
-  return `<img src="/logo.png" alt="Vandal" class="brand-wordmark-img" style="--brand-size:${h}px; height:${h}px; width:auto; display:inline-block;" />`;
+  return `<img src="/logo.svg" alt="Vandal" class="brand-wordmark-img" style="--brand-size:${h}px; height:${h}px; width:auto; display:inline-block;" />`;
 };
 
 /* infinite scroll helper */

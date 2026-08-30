@@ -13,6 +13,7 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
   let rescues = 0;
   let suppressErrorHook = false;
   let instantAttached = false;
+  let metaRetried = false; // metaIncomplete 応答の裏リトライは 1 回だけ
 
   app.innerHTML = `
   <div class="watch">
@@ -31,6 +32,31 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
 
   const video = $('#pvideo');
   const wrapEl = $('#pwrap');
+
+  // ---- INSTANT INFO: カード/スナップショットのメタで即時描画（ネットワーク往復ゼロ）。
+  // タップ元カードのタイトル/チャンネル/統計がセッションキャッシュに残っていれば、
+  // タイトル・アクション行（チャンネル名・視聴回数）・関連動画レールをこの瞬間に表示し、
+  // /api/watch の完全版が届いたら上書きで追従する。キャッシュが無ければ従来どおり骨格表示。
+  const hint = WatchSnap.get(id);
+  if (hint) {
+    if (hint.title) document.title = hint.title + ' - Vandal';
+    const wTitle = $('.wtitle');
+    if (wTitle && hint.title) wTitle.textContent = hint.title;
+    const aRow = $('.action-row');
+    if (aRow && (hint.channel || hint.views)) {
+      aRow.innerHTML = `
+      <div class="ch-chip">
+        <div class="ch-ava">${hint.avatar ? `<img src="${esc(hint.avatar)}" alt="">` : ''}</div>
+        <div class="ch-names">
+          <div class="ch-name">${esc(hint.channel || '')}</div>
+          <div class="ch-subs">${esc(hint.views || '')}</div>
+        </div>
+      </div>`;
+    }
+    if (hint.related?.length) {
+      try { fillRail({ related: hint.related }); } catch (_) {}
+    }
+  }
 
   // ---- INSTANT START: don't wait for the API round-trip. Attach the default
   // 360p relay immediately; the server resolves the (IP-pinned) URL and the
@@ -127,6 +153,25 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
         }
         rescueVeil(0);
         await setupPlayback(d);
+        // metaIncomplete（関連/概要/コメントが打ち切られた応答）なら、再生を妨げず
+        // 裏で完全版を取り直して表示に追従する。サーバーは不完全応答をキャッシュ
+        // しないため、2回目のリクエストは必ず完全版を組み立て直す。
+        if (d.playable && d.metaIncomplete && !metaRetried) {
+          metaRetried = true;
+          setTimeout(() => {
+            if (destroyed) return;
+            api.invalidate('/api/watch/' + vid);
+            api('/api/watch/' + vid, { ttl: 0 })
+              .then((d2) => {
+                if (destroyed || !d2 || d2.metaIncomplete) return;
+                document.title = (d2.title || 'Vandal') + ' - Vandal';
+                fillMeta(d2);
+                loadComments(d2);
+                fillRail(d2);
+              })
+              .catch(() => {});
+          }, 2200);
+        }
       })
       .catch(async (e) => {
         if (destroyed) return;
@@ -671,6 +716,21 @@ function renderWatch(params, { vertical = false, shortId = null } = {}) {
       });
     }
     setupAsk(d);
+    // セッションスナップショット保存（次回この動画を開いたときは往復ゼロで即描画）
+    WatchSnap.save(id, {
+      title: d.title || '',
+      channel: ch.name || '',
+      views: d.viewCount || '',
+      duration: d.lengthSeconds ? fmtDur(d.lengthSeconds) : '',
+      avatar: ch.avatar || '',
+      likeCount: d.likeCount || '',
+      dateText: d.dateText || '',
+      desc: (d.description || '').slice(0, 400),
+      related: (d.related || []).slice(0, 12).map(r => ({
+        id: r.id, kind: r.kind, title: r.title || '', channel: r.channel || '',
+        views: r.views || '', thumb: r.thumb || '', duration: r.duration || '',
+      })),
+    });
   }
 
   /* ---------------- ♦ Ask（HavocPianoAI 連携・概要欄を読み込んだAI） ------------- */
