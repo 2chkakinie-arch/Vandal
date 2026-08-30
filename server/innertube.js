@@ -798,35 +798,66 @@ function localEngineWeak() {
  * metaIncomplete 応答を返す（再生は即始まり、クライアントが裏リトライで追従）。
  */
 const META_DEADLINE_MS = 4500;
+/** watchNext が player 完了後どれだけ遅れても全体を待つ余裕幅（これを超えたら
+ *  metaIncomplete で即応答。長引く watchNext だけを打ち切り、正常な watchNext は
+ *  完全版に含める — 「超高速化」の中核）。 */
+const META_GRACE_MS = 800;
 
 async function getVideoFullUncached(videoId, opts = {}) {
   // 委譲は裏で先行発火（並行）。自前成功時は破棄、失敗時のみ採用。
   const meshJob = (mesh.canDelegate && localEngineWeak())
     ? mesh.delegatePlayer(videoId).catch(() => null)
     : null;
-  // 高速化（冷間タップの体感速度）: 旧実装は player と watchNext の両方が
-  // 終わるまで応答を保留していた（遅い方が全体を律速）。watchNext は
-  // 上限で打ち切り、player の結果だけで即応答を組み立てられるようにする。
+  // 高速化（超高速化）: watchNext が player より**わずかに遅い**だけなら通常どおり
+  // 完全版を返すが、watchNext が長引く場合は player 完了 + 短い猶予 を上限に
+  // metaIncomplete=true で即応答する。旧実装は Promise.allSettled で watchNext
+  // （上限 4.5 秒）の完了まで待っており、player が 1 秒で勝っても全体の応答が
+  // 最大 4.5 秒も後ろ倒しになっていた（再生可否・ストリーム一覧・メタ全体が
+  // watchNext に律速されていた）。新方式:
+  //   - 通常（watchNext ≦ player + 猶予）: 完全版を待って返す（回帰なし）
+  //   - watchNext が長引く場合: player 完了 + 猶予(800ms) で metaIncomplete を返し、
+  //     裏の watchNext キャッシュ（'w:…'）+ クライアントの裏リトライで完全版に追従。
+  // 再生は player の結果だけで組み立てられるため、一切待たされない。
   const playerJob = player(videoId, opts.fresh ? { ...opts, fresh: true } : opts);
   const nxJob = Promise.race([
     watchNext(videoId, opts),
     sleep(META_DEADLINE_MS).then(() => null),
   ]);
-  const [pl, nx] = await Promise.allSettled([playerJob, nxJob]);
-  if (pl.status === 'rejected' && nx.status === 'rejected') {
+  const full = Promise.allSettled([playerJob, nxJob]);
+  // player 完走から猶予時間だけ待っても full が確定しなければ watchNext を打ち切る。
+  // （player 失敗時は watchNext の確定まで正規に待つ — 旧来の失敗意味論を保つ）
+  const playerGrace = playerJob.then(
+    () => sleep(META_GRACE_MS).then(() => ({ grace: 'ok' })),
+    () => sleep(META_GRACE_MS).then(() => ({ grace: 'fail' })),
+  );
+  const settled = await Promise.race([full, playerGrace]);
+  let pl, nx;
+  if (settled.grace === 'ok') {
+    // player は成功・watchNext は未達 → metaIncomplete 応答として即返す
+    const plv = await playerJob;
+    pl = { status: 'fulfilled', value: plv };
+    nx = null;
+  } else if (settled.grace === 'fail') {
+    // player 失敗・watchNext 未達 — watchNext の確定まで待って正規処理へ
+    [pl, nx] = await full;
+  } else {
+    [pl, nx] = settled;
+  }
+  const p = pl.status === 'fulfilled' ? pl.value : null;
+  const n = (nx && nx.status === 'fulfilled') ? nx.value : null;
+  const nRejected = !!(nx && nx.status === 'rejected');
+  const plErr = pl.status === 'rejected' ? pl.reason : null;
+  if (plErr && nRejected) { // player と watchNext の両方が確定失敗
     if (meshJob) {
       const peer = await meshJob;
       if (peer?.__urlMap) {
         logbus.info('mesh', '自前発行失敗 → ピアの発行結果を採用', { v: videoId, source: peer.source || 'peer' });
-        const nxVal = nx.status === 'fulfilled' ? nx.value : null;
-        return assembleVideoFull(videoId, peer, nxVal, pl.reason, !nxVal);
+        return assembleVideoFull(videoId, peer, null, plErr, true);
       }
     }
-    throw pl.reason;
+    throw plErr;
   }
-  const p = pl.status === 'fulfilled' ? pl.value : null;
-  const n = nx.status === 'fulfilled' ? nx.value : null;
-  return assembleVideoFull(videoId, p, n, pl.status === 'rejected' ? pl.reason : null, !n);
+  return assembleVideoFull(videoId, p, n, plErr, !n);
 }
 
 /** player 結果（自前 or ピア委譲 or Piped）と watchNext 結果を最終応答へ組み立てる共通出口。 */
