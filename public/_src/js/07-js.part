@@ -179,18 +179,10 @@ function renderSettings() {
 
       <section class="set-card">
         <h2><span class="set-ic">🌐</span>インスタンス協力メッシュ</h2>
-        <p class="set-note">デプロイされた Vandal は設定不要で自動的にメッシュへ参加し、生きているプロキシと健全性を共有します。訪問者には各インスタンスの URL は省略表記でしか表示されません。運用モードの変更（プライベート化・脱退）は管理者のみ可能です。</p>
+        <p class="set-note">デプロイされた Vandal は設定不要で自動的にメッシュへ参加し、生きているプロキシと健全性を共有します。訪問者には各インスタンスの URL は省略表記でしか表示されません。メッシュ参加の変更はデプロイ時の運用設定で管理され、利用者向け設定からは変更できません。</p>
         <div class="set-note" id="mesh-live-status">メッシュ状態を取得中…</div>
         ${c === null ? `<div class="adm-area"><div class="mini-spin"></div></div>` : isAdmin ? `
-        <div class="set-actions" style="flex-direction:column;align-items:flex-start;gap:14px;margin-top:16px">
-          <div>
-            <div class="set-note" style="margin:0 0 6px"><b>メッシュ参加</b>（無効で完全単独運用）</div>
-            <div class="seg seg-sm" id="cfg-mesh-enabled" style="max-width:420px">
-              <button data-v="on">参加する</button>
-              <button data-v="off">無効にする</button>
-            </div>
-          </div>
-        </div>` : `
+        <p class="set-note mesh-readonly">メッシュ参加状態は管理用の環境変数または API で管理されています。</p>` : `
         <div class="adm-area">${adminLockHtml(c)}</div>`}
       </section>
 
@@ -226,32 +218,6 @@ function renderSettings() {
 
     $('#mesh-live-status').innerHTML = c === null ? 'メッシュ状態を取得中…' : (c ? meshStatusLine(c) : 'メッシュ状態を取得できませんでした。');
     wireAdminLock(app, () => renderSettings());
-
-    /* ---- 管理者: メッシュ設定（data/config.json へ永続化） ---- */
-    if (isAdmin) {
-      const meshEnabledSeg = $('#cfg-mesh-enabled');
-      const syncMeshSegs = () => {
-        meshEnabledSeg.querySelectorAll('button').forEach((b) => b.classList.toggle('sel', (b.dataset.v === 'on') === !!c.meshEnabled));
-      };
-      syncMeshSegs();
-      const saveMesh = async (patch, okMsg) => {
-        try {
-          const out = await api('/api/settings', { method: 'POST', body: JSON.stringify(patch), ttl: 0, headers: Admin.headers() });
-          Object.assign(c, out);
-          syncMeshSegs();
-          $('#mesh-live-status').innerHTML = meshStatusLine(out);
-          toast(okMsg);
-        } catch (e) {
-          if (e?.status === 403) { toast('管理者のみ変更できます'); renderSettings(); return; }
-          toast('変更に失敗しました');
-        }
-      };
-      meshEnabledSeg.addEventListener('click', (e) => {
-        const b = e.target.closest('button[data-v]');
-        if (!b) return;
-        saveMesh({ meshEnabled: b.dataset.v === 'on' }, b.dataset.v === 'on' ? 'メッシュに参加しました' : 'メッシュを無効化しました（単独運用）');
-      });
-    }
 
     $('#s-clear-history').addEventListener('click', () => { History.clear(); toast('履歴を消去しました'); });
     $('#s-clear-cache').addEventListener('click', () => {
@@ -301,7 +267,7 @@ function renderDoc() {
 # 明示したいときだけ（任意）:
 VANDAL_MESH_URL=https://vandal.example.com          # 自インスタンスの公開 URL を固定
 VANDAL_MESH_PEERS=https://peer1.example.com,...     # 最初の接続先（ゴシップで自動拡大）
-# settings.json 相当（data/config.json / 設定ページからも変更可 ※管理者のみ）:
+# settings.json 相当（data/config.json / 管理用 API。利用者向け設定からは変更不可）:
 #   "meshPrivate": true   → URL を共有しない匿名参加（内部の共同作業は継続）
 #   "meshEnabled": false  → 完全単独運用に戻す
 # インスタンス管理（設定の書き込み）はデプロイ者専用:
@@ -398,16 +364,14 @@ function renderInstances() {
   let alive = true;
 
   async function refresh() {
-    let st = null, cfg = null;
+    let st = null;
     try { st = await api('/api/mesh/state', { ttl: 11 * 1000 }); } catch (_) {}
-    try { cfg = await api('/api/settings', { ttl: 0, headers: Admin.headers() }); } catch (_) {}
     if (!alive || !$('#inst-body')) return;
     const body = $('#inst-body');
     if (!st) { body.innerHTML = nudgeHtml('状態を取得できませんでした', 'サーバーが混み合っています。少し待ってから再試行してください。'); return; }
 
     const self = st.self || {};
     const peers = st.peers || [];
-    const isAdmin = !!cfg?.admin;
     const tiers = { S: [], A: [], B: [], C: [] };
     for (const p of peers) (tiers[p.tier] || tiers.C).push(p);
     const selfEntry = {
@@ -470,17 +434,6 @@ function renderInstances() {
         </section>
       </div>`;
 
-    $('#inst-mode-toggle')?.addEventListener('click', async () => {
-      const next = !mode;
-      try {
-        await api('/api/settings', { method: 'POST', body: JSON.stringify({ meshPrivate: next }), ttl: 0, headers: Admin.headers() });
-        toast(next ? 'プライベートインスタンスに切り替えました' : '公開参加モードに切り替えました');
-        refresh();
-      } catch (e) {
-        if (e?.status === 403) toast('管理者のみ変更できます');
-        else toast('変更に失敗しました');
-      }
-    });
   }
 
   refresh();

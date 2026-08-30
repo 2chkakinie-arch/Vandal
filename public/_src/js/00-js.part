@@ -254,22 +254,11 @@ function loadHls() {
   return _hlsP;
 }
 
-/* ---- ブランドロゴ（インライン SVG — 追加リクエストなし） ---- */
-const LOGO = (() => {
-  const id = 'lg' + Math.random().toString(36).slice(2, 7);
-  return (size = 40) => `<svg class="brand-mark" width="${size}" height="${size}" viewBox="0 0 132 132" aria-hidden="true">
-    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ff2bd6"/><stop offset=".45" stop-color="#7a3cff"/><stop offset="1" stop-color="#19f0ff"/>
-    </linearGradient></defs>
-    <rect x="4" y="4" width="124" height="124" rx="18" fill="#111218"/>
-    <rect x="4" y="4" width="124" height="124" rx="18" fill="url(#${id})" opacity=".92"/>
-    <g fill="#fff" opacity=".28"><circle cx="18" cy="22" r="1.6"/><circle cx="114" cy="20" r="1.4"/><circle cx="16" cy="110" r="1.3"/><circle cx="108" cy="118" r="1.7"/></g>
-    <path fill="#19f0ff" d="M28 112c0 8 3 16 3 22 0 4-2 6-4 6-3 0-4-3-4-7 0-6 2-14 2-21z" opacity=".85"/>
-    <path fill="#ff2bd6" d="M96 108c1 10 4 18 4 24 0 3-1 5-3 5-3 0-4-3-4-7 0-7 1-15 1-22z" opacity=".9"/>
-    <path d="M26 32 L52 32 L66 86 L80 32 L106 32 L76 110 L56 110 Z" fill="#fff"/>
-    <path d="M88 48c10-14 28-10 22 8-3 10-16 16-22 6 4 2 10-2 10-8 0-8-8-10-10-6z" fill="#ffe14a"/>
-  </svg>`;
-})();
+/* ---- ブランドワードマーク（追加リクエストなし・文字のみ） ---- */
+const LOGO = (size = 40) => {
+  const fontSize = Math.max(22, Math.round(Number(size) * .58));
+  return `<span class="brand-wordmark" style="--brand-size:${fontSize}px">Vandal</span>`;
+};
 
 /* infinite scroll helper */
 function lazySentinel(container, onFire) {

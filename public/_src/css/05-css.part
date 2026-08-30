@@ -34,6 +34,12 @@
   --skeleton: #e5e5e5;
   --radius: 16px;
   --dur: .18s;
+  --logo-start: #111827;
+  --logo-mid: #e11d48;
+  --logo-hot: #ff8a00;
+  --logo-end: #6d28d9;
+  --logo-outline: rgba(15, 23, 42, .18);
+  --logo-shadow: rgba(15, 23, 42, .24);
 }
 html.dark {
   --bg: #0f0f0f;
@@ -53,6 +59,12 @@ html.dark {
   --shadow: 0 6px 24px rgba(0, 0, 0, .4);
   --shadow-lg: 0 14px 44px rgba(0, 0, 0, .55);
   --skeleton: #272727;
+  --logo-start: #f8fafc;
+  --logo-mid: #ff3d81;
+  --logo-hot: #ff9d2e;
+  --logo-end: #a78bfa;
+  --logo-outline: rgba(255, 255, 255, .22);
+  --logo-shadow: rgba(0, 0, 0, .58);
 }
 
 body { background: var(--bg); }
@@ -74,20 +86,37 @@ body { background: var(--bg); }
   z-index: 300;
 }
 .mh-start { min-width: auto; }
-.logo { padding: 6px 12px; display: flex; align-items: center; gap: 9px; }
-.logo-mark {
-  width: 30px; height: 30px; display: block; flex: none; border-radius: 8px;
-  filter: drop-shadow(0 2px 6px rgba(91, 141, 255, .35));
-  transition: transform var(--dur);
+.logo { padding: 8px 14px; display: flex; align-items: center; }
+.logo-word,
+.brand-wordmark {
+  --word-size: var(--brand-size, 21px);
+  display: inline-block;
+  white-space: nowrap;
+  font-family: Impact, Haettenschweiler, "Arial Narrow Bold", "Arial Black", sans-serif;
+  font-size: var(--word-size);
+  font-weight: 900;
+  font-style: italic;
+  line-height: .9;
+  letter-spacing: -.075em;
+  color: transparent;
+  background-image:
+    radial-gradient(circle at 18% 30%, rgba(255, 255, 255, .78) 0 .7px, transparent 1px),
+    linear-gradient(108deg, var(--logo-start) 0%, var(--logo-start) 17%, var(--logo-mid) 42%, var(--logo-hot) 69%, var(--logo-end) 100%);
+  background-size: 9px 9px, 100% 100%;
+  background-blend-mode: soft-light, normal;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-stroke: .45px var(--logo-outline);
+  text-shadow: -1.5px 0 rgba(0, 214, 255, .18), 2px 2px 0 rgba(255, 35, 117, .18), 0 5px 14px var(--logo-shadow);
+  transform: skewX(-8deg);
+  transform-origin: left center;
+  transition: transform var(--dur), filter var(--dur);
 }
-.logo-word {
-  font-size: 21px; font-weight: 800; letter-spacing: -.4px;
-  background: linear-gradient(92deg, var(--text), var(--text));
-  -webkit-background-clip: text; background-clip: text;
-  font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
-}
+.logo-word { --word-size: 21px; }
+.brand-wordmark { --word-size: var(--brand-size, 32px); }
 .logo:hover { background: var(--hover); border-radius: 12px; }
-.logo:hover .logo-mark { transform: translateY(-1px) rotate(-3deg); }
+.logo:hover .logo-word,
+.brand-wordmark:hover { transform: skewX(-8deg) translateY(-1px) rotate(-1deg); filter: saturate(1.16) drop-shadow(0 5px 10px var(--logo-shadow)); }
 .icon-btn { border-radius: 12px; transition: background var(--dur), transform var(--dur); }
 .icon-btn:active { transform: scale(.92); }
 #menu-btn { margin-right: 2px; }
@@ -217,6 +246,5 @@ body.nav-open #nav-backdrop { display: block; animation: fadeIn .2s; }
   body { padding-bottom: 62px; }
   .chips { top: 60px; }
   .ch-tabs { top: 60px; }
-  .logo-img { height: 28px; }
   #settings-btn { display: grid; } /* モバイルでも設定へ */
 }

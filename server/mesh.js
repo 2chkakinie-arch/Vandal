@@ -208,7 +208,7 @@ class Mesh {
       // 学習は「最初に見た公開 Host で確定」（sticky）。逆プロキシ配下では Host は
       // 信頼できるが、直接アクセスされる場合は偽装 Host で広告 URL を書き換えられ
       // ないようにする。確定値は data/mesh-registry.json に永続化され、再起動後も
-      // 変わらない。変更したいときは VANDAL_MESH_URL か設定ページを使う。
+      // 変わらない。変更したいときは VANDAL_MESH_URL か管理用 API を使う。
       if (this.selfUrl) return next();
       this.selfUrl = url;
       this.selfSource = 'learned';
