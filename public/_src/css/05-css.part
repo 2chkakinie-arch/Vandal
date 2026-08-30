@@ -86,7 +86,47 @@ body { background: var(--bg); }
   z-index: 300;
 }
 .mh-start { min-width: auto; }
-.logo { padding: 8px 14px; display: flex; align-items: center; }
+.logo { padding: 4px 10px; display: flex; align-items: center; border-radius: 12px; transition: background var(--dur); }
+.logo:hover { background: var(--hover); }
+.logo-img {
+  height: 38px;
+  width: auto;
+  max-width: 140px;
+  display: block;
+  object-fit: contain;
+  transition: transform var(--dur), filter var(--dur);
+  filter: drop-shadow(0 2px 6px rgba(15, 23, 42, .18));
+}
+.logo:hover .logo-img {
+  transform: skewX(-4deg) translateY(-1px) scale(1.04);
+  filter: drop-shadow(0 4px 12px rgba(225, 29, 72, .38));
+}
+html.dark .logo-img {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, .55));
+}
+html.dark .logo:hover .logo-img {
+  filter: drop-shadow(0 4px 14px rgba(255, 61, 129, .5));
+}
+.brand-wordmark-img {
+  display: inline-block;
+  vertical-align: middle;
+  height: var(--brand-size, 38px);
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  transition: transform var(--dur), filter var(--dur);
+  filter: drop-shadow(0 2px 8px rgba(15, 23, 42, .18));
+}
+.brand-wordmark-img:hover {
+  transform: skewX(-4deg) translateY(-1px) scale(1.03);
+  filter: drop-shadow(0 4px 12px rgba(225, 29, 72, .4));
+}
+html.dark .brand-wordmark-img {
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, .55));
+}
+html.dark .brand-wordmark-img:hover {
+  filter: drop-shadow(0 4px 14px rgba(255, 61, 129, .5));
+}
 .logo-word,
 .brand-wordmark {
   --word-size: var(--brand-size, 21px);
@@ -114,7 +154,6 @@ body { background: var(--bg); }
 }
 .logo-word { --word-size: 21px; }
 .brand-wordmark { --word-size: var(--brand-size, 32px); }
-.logo:hover { background: var(--hover); border-radius: 12px; }
 .logo:hover .logo-word,
 .brand-wordmark:hover { transform: skewX(-8deg) translateY(-1px) rotate(-1deg); filter: saturate(1.16) drop-shadow(0 5px 10px var(--logo-shadow)); }
 .icon-btn { border-radius: 12px; transition: background var(--dur), transform var(--dur); }

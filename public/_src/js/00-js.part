@@ -254,10 +254,10 @@ function loadHls() {
   return _hlsP;
 }
 
-/* ---- ブランドワードマーク（追加リクエストなし・文字のみ） ---- */
+/* ---- ブランドワードマーク（スプレーアートロゴ画像・文字のみ） ---- */
 const LOGO = (size = 40) => {
-  const fontSize = Math.max(22, Math.round(Number(size) * .58));
-  return `<span class="brand-wordmark" style="--brand-size:${fontSize}px">Vandal</span>`;
+  const h = Math.max(28, Math.round(Number(size) * .75));
+  return `<img src="/logo.png" alt="Vandal" class="brand-wordmark-img" style="--brand-size:${h}px; height:${h}px; width:auto; display:inline-block;" />`;
 };
 
 /* infinite scroll helper */
