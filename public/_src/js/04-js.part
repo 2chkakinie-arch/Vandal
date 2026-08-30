@@ -284,13 +284,13 @@ class PlayerUI {
       <div class="player-overlay">
         <input type="range" class="seek" data-el="seek" min="0" max="1000" value="0" step="1">
         <div class="ctl-row">
-          <button class="icon-btn" data-el="play" title="再生 (k)">${ICON_PLAY}</button>
-          <button class="icon-btn" data-el="vol" title="ミュート (m)"><svg viewBox="0 0 24 24" class="ic"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 2.2v2.1a7 7 0 0 1 0 15.4v2.1a9 9 0 0 0 0-19.6z"/></svg></button>
+          <button class="icon-btn" data-el="play" title="${T('再生 (k)')}">${ICON_PLAY}</button>
+          <button class="icon-btn" data-el="vol" title="${T('ミュート (m)')}"><svg viewBox="0 0 24 24" class="ic"><path d="M3 9v6h4l5 5V4L7 9zm13.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 2.2v2.1a7 7 0 0 1 0 15.4v2.1a9 9 0 0 0 0-19.6z"/></svg></button>
           <input type="range" class="seek" data-el="volrange" min="0" max="100" value="100" style="width:72px">
           <span class="p-time" data-el="time">0:00 / 0:00</span>
           <div class="p-spacer"></div>
-          <button class="icon-btn" data-el="settings" title="設定"><svg viewBox="0 0 24 24" class="ic"><path d="M19.7 13.4a7.6 7.6 0 0 0 0-2.8l2-1.5a.5.5 0 0 0 .1-.7l-1.9-3.2a.5.5 0 0 0-.6-.2l-2.3.9a7.7 7.7 0 0 0-2.4-1.4L14.2 2a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4L9 4.5a7.7 7.7 0 0 0-2.4 1.4l-2.3-.9a.5.5 0 0 0-.6.2L1.8 8.4a.5.5 0 0 0 .1.7l2 1.5a7.6 7.6 0 0 0 0 2.8l-2 1.5a.5.5 0 0 0-.1.7l1.9 3.2c.14.24.42.34.68.22l2.3-.9c.72.56 1.53 1.03 2.4 1.4l.35 2.5c.04.24.24.4.5.4h3.8c.24 0 .45.17.5-.4l.35-2.5a7.7 7.7 0 0 0 2.4-1.4l2.3.9c.24.1.52.02.65-.22l1.9-3.18a.5.5 0 0 0-.1-.73zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button>
-          <button class="icon-btn" data-el="fs" title="全画面表示 (f)"><svg viewBox="0 0 24 24" class="ic"><path d="M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z"/></svg></button>
+          <button class="icon-btn" data-el="settings" title="${T('設定')}"><svg viewBox="0 0 24 24" class="ic"><path d="M19.7 13.4a7.6 7.6 0 0 0 0-2.8l2-1.5a.5.5 0 0 0 .1-.7l-1.9-3.2a.5.5 0 0 0-.6-.2l-2.3.9a7.7 7.7 0 0 0-2.4-1.4L14.2 2a.5.5 0 0 0-.5-.4h-3.8a.5.5 0 0 0-.5.4L9 4.5a7.7 7.7 0 0 0-2.4 1.4l-2.3-.9a.5.5 0 0 0-.6.2L1.8 8.4a.5.5 0 0 0 .1.7l2 1.5a7.6 7.6 0 0 0 0 2.8l-2 1.5a.5.5 0 0 0-.1.7l1.9 3.2c.14.24.42.34.68.22l2.3-.9c.72.56 1.53 1.03 2.4 1.4l.35 2.5c.04.24.24.4.5.4h3.8c.24 0 .45.17.5-.4l.35-2.5a7.7 7.7 0 0 0 2.4-1.4l2.3.9c.24.1.52.02.65-.22l1.9-3.18a.5.5 0 0 0-.1-.73zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg></button>
+          <button class="icon-btn" data-el="fs" title="${T('全画面表示 (f)')}"><svg viewBox="0 0 24 24" class="ic"><path d="M7 14H5v5h5v-2H7zm-2-4h2V7h3V5H5zm12 7h-3v2h5v-5h-2zM14 5v2h3v3h2V5z"/></svg></button>
         </div>
       </div>`);
     this.el = {};
@@ -367,10 +367,10 @@ class PlayerUI {
     if (!q.classList.contains('hidden')) { q.classList.add('hidden'); return; }
     const { qualities, current, onPick, speeds, speed, onSpeed } = this.getQualities();
     q.innerHTML =
-      `<div class="qhead">画質</div>` +
+      `<div class="qhead">${T('画質')}</div>` +
       qualities.map(ql => `<div class="qi ${ql.key === current ? 'sel' : ''}" data-q="${ql.key}"><span>${esc(ql.label)}</span></div>`).join('') +
-      `<div class="qhead">再生速度</div>` +
-      speeds.map(s => `<div class="qi" data-s="${s}" style="${s === speed ? 'color:#3ea6ff' : ''}"><span>${s === 1 ? '標準' : s + 'x'}</span></div>`).join('');
+      `<div class="qhead">${T('再生速度')}</div>` +
+      speeds.map(s => `<div class="qi" data-s="${s}" style="${s === speed ? 'color:#3ea6ff' : ''}"><span>${s === 1 ? T('標準') : s + 'x'}</span></div>`).join('');
     q.classList.remove('hidden');
     const close = (e) => {
       if (!q.contains(e.target)) { q.classList.add('hidden'); document.removeEventListener('click', close); }

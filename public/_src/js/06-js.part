@@ -30,12 +30,12 @@ function renderChannel(rawId, params) {
             <div class="ch-title">${esc(d.name || '')}</div>
             <div class="ch-meta"><span class="handle">${esc(d.handle || '')}</span>${d.subs ? ' • ' + esc(d.subs) : ''}${d.videos ? ' • ' + esc(d.videos) : ''}</div>
             <div class="ch-desc">${esc(d.description || '')}</div>
-            <div style="margin-top:12px"><button class="sub-btn ${subbed0 ? 'subbed' : ''}" id="ch-sub">${subbed0 ? '登録済み' : 'チャンネル登録'}</button></div>
+            <div style="margin-top:12px"><button class="sub-btn ${subbed0 ? 'subbed' : ''}" id="ch-sub">${subbed0 ? T('登録済み') : T('チャンネル登録')}</button></div>
           </div>
         </div>
         <div class="ch-tabs">${tabsHtml}</div>
         <div id="ch-content">
-          ${others.length ? `<div class="section-title" style="padding:16px 24px 0;font-size:16px;font-weight:600">作成した再生リスト</div><div class="grid">${others.map(playlistCard).join('')}</div>` : ''}
+          ${others.length ? `<div class="section-title" style="padding:16px 24px 0;font-size:16px;font-weight:600">${T('作成した再生リスト')}</div><div class="grid">${others.map(playlistCard).join('')}</div>` : ''}
           ${shorts.length ? shortsShelf(shorts) : ''}
           <div class="grid">${longs.map(v => videoCard(v)).join('')}</div>
         </div>
@@ -43,8 +43,8 @@ function renderChannel(rawId, params) {
       $('#ch-sub')?.addEventListener('click', function () {
         const subbed = Subs.toggle({ id: d.id, name: d.name, avatar: d.avatar });
         this.classList.toggle('subbed', subbed);
-        this.textContent = subbed ? '登録済み' : 'チャンネル登録';
-        toast(subbed ? 'チャンネル登録しました（この端末に保存）' : '登録を解除しました');
+        this.textContent = subbed ? T('登録済み') : T('チャンネル登録');
+        toast(subbed ? T('チャンネル登録しました（この端末に保存）') : T('登録を解除しました'));
       });
       if (d.continuation) {
         // 永久読み込み: 継続トークンがある限りスクロールで動画を自動追記する。
@@ -71,13 +71,13 @@ function renderChannel(rawId, params) {
         sent = lazySentinel($('#ch-content'), loadMore);
       }
     })
-    .catch(e => errBox('チャンネルを読み込めませんでした: ' + e.message, () => renderChannel(rawId, params)));
+    .catch(e => errBox(T('チャンネルを読み込めませんでした: ') + e.message, () => renderChannel(rawId, params)));
 }
 
 /* ================================================================ PLAYLIST */
 function renderPlaylist(params) {
   const list = params.get('list') || '';
-  if (!list) { errBox('再生リストIDが不正です', render); return; }
+  if (!list) { errBox(T('再生リストIDが不正です'), render); return; }
   app.innerHTML = skGrid(10);
   api('/api/playlist/' + encodeURIComponent(list), { ttl: 10 * 60e3 })
     .then(d => {
@@ -94,8 +94,8 @@ function renderPlaylist(params) {
       <div class="pl-page">
         <div class="pl-side">
           ${allItems[0] ? `<div class="pl-thumb"><img src="${esc(thumbUrl(allItems[0]))}" alt=""></div>` : ''}
-          <h1>${esc(d.title || '再生リスト')}</h1>
-          <div class="pl-meta">${esc(d.channelName || '')}<br>${d.views ? esc(d.views) + '<br>' : ''}${allItems.length} 本の動画${d.isInfinite ? '（ミックス）' : ''}</div>
+          <h1>${esc(d.title || T('再生リスト'))}</h1>
+          <div class="pl-meta">${esc(d.channelName || '')}<br>${d.views ? esc(d.views) + '<br>' : ''}${allItems.length}${T('本の動画')}${d.isInfinite ? T('（ミックス）') : ''}</div>
         </div>
         <div id="pl-items">
           ${allItems.map((v, i) => rowHtml(v, i + 1)).join('')}
@@ -126,11 +126,11 @@ function renderPlaylist(params) {
         });
       }
     })
-    .catch(e => errBox('再生リストを読み込めませんでした: ' + e.message, () => renderPlaylist(params)));
+    .catch(e => errBox(T('再生リストを読み込めませんでした: ') + e.message, () => renderPlaylist(params)));
 }
 
 /* ================================================================== SHORTS */
-const SHORT_CHIPS = [['おすすめ', null], ['おもしろ', 'ショート おもしろ'], ['音楽', 'ショート 音楽'], ['動物', 'ショート かわいい 動物'], ['ゲーム', 'ショート ゲーム'], ['コント', 'コント ショート']];
+const SHORT_CHIPS = [[T('おすすめ'), null], [T('おもしろ'), 'ショート おもしろ'], [T('音楽'), 'ショート 音楽'], [T('動物'), 'ショート かわいい 動物'], [T('ゲーム'), 'ショート ゲーム'], [T('コント'), 'コント ショート']];
 
 function renderShortsHome(chip = 0) {
   setActiveNav('shorts');
@@ -138,19 +138,19 @@ function renderShortsHome(chip = 0) {
     <div class="chips">${SHORT_CHIPS.map(([label], i) =>
       `<button class="chip ${i === chip ? 'active' : ''}" data-sc="${i}">${label}</button>`).join('')}
     </div>
-    <div id="shorts-body"><div class="sec-title">ショート</div>${skGrid(10)}</div>`;
+    <div id="shorts-body"><div class="sec-title">${T('ショート')}</div>${skGrid(10)}</div>`;
   $$('#app [data-sc]').forEach(b => b.addEventListener('click', () => renderShortsHome(+b.dataset.sc)));
   const body = $('#shorts-body');
   const draw = (shorts, title) => {
     if (!document.body.contains(body)) return;
-    if (!shorts.length) { body.innerHTML = `<div class="sec-title">${esc(title)}</div><div class="empty-state"><h1>ショート動画が見つかりません</h1></div>`; return; }
+    if (!shorts.length) { body.innerHTML = `<div class="sec-title">${esc(title)}</div><div class="empty-state"><h1>${T('ショート動画が見つかりません')}</h1></div>`; return; }
     body.innerHTML = `<div class="sec-title">${esc(title)}</div><div class="shorts-grid">${shorts.map(shortCard).join('')}</div>`;
   };
   const q = SHORT_CHIPS[chip][1];
   if (!q) {
     api('/api/shorts', { ttl: 15 * 60e3, persist: 10 * 60e3 })
-      .then(d => draw(d.items || [], 'ショート'))
-      .catch(() => errBox('読み込めませんでした', () => renderShortsHome(chip)));
+      .then(d => draw(d.items || [], T('ショート')))
+      .catch(() => errBox(T('読み込めませんでした'), () => renderShortsHome(chip)));
   } else {
     Promise.allSettled([api('/api/search?q=' + encodeURIComponent(q), { ttl: 15 * 60e3 }), api('/api/shorts', { ttl: 15 * 60e3 })])
       .then(([s, base]) => {
@@ -158,7 +158,7 @@ function renderShortsHome(chip = 0) {
         const feed = base.status === 'fulfilled' ? base.value.items : [];
         const merged = []; const seen = new Set();
         for (const it of [...shorts, ...feed]) { if (!seen.has(it.id)) { seen.add(it.id); merged.push(it); } }
-        draw(merged, 'ショート');
+        draw(merged, T('ショート'));
       });
   }
 }
@@ -189,21 +189,21 @@ function renderShort(firstId) {
         <div class="shp-ch">
           <div class="shp-ava" id="shp-ava"></div>
           <span class="shp-chname" id="shp-chname"></span>
-          <button class="shp-sub" id="shp-sub">登録</button>
+          <button class="shp-sub" id="shp-sub">${T('登録')}</button>
         </div>
       </div>
       <div class="shp-progress"><div class="shp-bar" id="shp-bar"></div></div>
       <div class="shp-rail" id="shp-rail">
-        <button class="shp-act" data-sh="like" title="高く評価"><svg viewBox="0 0 24 24" class="ic"><path d="M2 21h4V9H2zM22 10c0-1.1-.9-2-2-2h-6.3l.9-4.6c0-.9-.8-1.5-.8-1.5L12.7 1 6.2 8.6C5.8 8.9 5 9.5 5 10v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7z"/></svg><span id="shp-likes"></span></button>
-        <button class="shp-act" data-sh="comments" title="コメント"><svg viewBox="0 0 24 24" class="ic"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg><span id="shp-cmcount"></span></button>
-        <button class="shp-act" data-sh="share" title="共有"><svg viewBox="0 0 24 24" class="ic"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg><span>共有</span></button>
-        <button class="shp-act" data-sh="save" title="保存"><svg viewBox="0 0 24 24" class="ic"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-5 7 5V5a2 2 0 0 0-2-2z"/></svg><span>保存</span></button>
-        <button class="shp-act" data-sh="open" title="通常プレイヤーで開く"><svg viewBox="0 0 24 24" class="ic"><path d="M4 4h7v2H6v12h12v-5h2v7H4zM14 4h6v6h-2V7.4l-6.3 6.3-1.4-1.4L16.6 6H14z"/></svg><span>詳細</span></button>
+        <button class="shp-act" data-sh="like" title="${T('高く評価')}"><svg viewBox="0 0 24 24" class="ic"><path d="M2 21h4V9H2zM22 10c0-1.1-.9-2-2-2h-6.3l.9-4.6c0-.9-.8-1.5-.8-1.5L12.7 1 6.2 8.6C5.8 8.9 5 9.5 5 10v10c0 1.1.9 2 2 2h9c.8 0 1.5-.5 1.8-1.2l3-7.1c.1-.2.2-.5.2-.7z"/></svg><span id="shp-likes"></span></button>
+        <button class="shp-act" data-sh="comments" title="${T('コメント')}"><svg viewBox="0 0 24 24" class="ic"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg><span id="shp-cmcount"></span></button>
+        <button class="shp-act" data-sh="share" title="${T('共有')}"><svg viewBox="0 0 24 24" class="ic"><path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z"/></svg><span>${T('共有')}</span></button>
+        <button class="shp-act" data-sh="save" title="${T('保存')}"><svg viewBox="0 0 24 24" class="ic"><path d="M17 3H7a2 2 0 0 0-2 2v16l7-5 7 5V5a2 2 0 0 0-2-2z"/></svg><span>${T('保存')}</span></button>
+        <button class="shp-act" data-sh="open" title="${T('通常プレイヤーで開く')}"><svg viewBox="0 0 24 24" class="ic"><path d="M4 4h7v2H6v12h12v-5h2v7H4zM14 4h6v6h-2V7.4l-6.3 6.3-1.4-1.4L16.6 6H14z"/></svg><span>${T('詳細')}</span></button>
       </div>
     </div>
     <div class="shp-navs">
-      <button class="shp-nav" id="shp-prev" title="前の動画 (↑)"><svg viewBox="0 0 24 24" class="ic"><path d="M7.4 15.4 12 10.8l4.6 4.6L18 14l-6-6-6 6z"/></svg></button>
-      <button class="shp-nav" id="shp-next" title="次の動画 (↓)"><svg viewBox="0 0 24 24" class="ic"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg></button>
+      <button class="shp-nav" id="shp-prev" title="${T('前の動画 (↑)')}"><svg viewBox="0 0 24 24" class="ic"><path d="M7.4 15.4 12 10.8l4.6 4.6L18 14l-6-6-6 6z"/></svg></button>
+      <button class="shp-nav" id="shp-next" title="${T('次の動画 (↓)')}"><svg viewBox="0 0 24 24" class="ic"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/></svg></button>
     </div>
   </div>`;
 
@@ -243,7 +243,7 @@ function renderShort(firstId) {
       video.src = `/api/stream?v=${id}&itag=18`;
       video.muted = false;
       await video.play().catch(() => { video.muted = true; return video.play().catch(() => {}); });
-      document.title = (m.title || 'ショート') + ' - Vandal';
+      document.title = (m.title || T('ショート')) + ' - Vandal';
     } catch (_) { /* watchdog below covers */ }
     // メタは裏で充填（タイトル/チャンネル/高評価数/コメント数）
     api('/api/watch/' + id, { ttl: 3 * 60e3 }).then((d) => {
@@ -254,10 +254,10 @@ function renderShort(firstId) {
       $('#shp-ava').innerHTML = d.channel?.avatar ? `<img src="${esc(d.channel.avatar)}" alt="">` : '';
       $('#shp-likes').textContent = d.likeCount || '';
       $('#shp-cmcount').textContent = d.commentsCount || '';
-      document.title = (d.title || 'ショート') + ' - Vandal';
+      document.title = (d.title || T('ショート')) + ' - Vandal';
       const subbed = Subs.has(d.channel?.id);
       const sb = $('#shp-sub');
-      if (sb) { sb.textContent = subbed ? '登録済み' : '登録'; sb.classList.toggle('subbed', !!subbed); }
+      if (sb) { sb.textContent = subbed ? T('登録済み') : T('登録'); sb.classList.toggle('subbed', !!subbed); }
       WatchSnap.save(id, {
         title: d.title || '', channel: d.channel?.name || '', views: d.viewCount || '',
         avatar: d.channel?.avatar || '', likeCount: d.likeCount || '', ts: Date.now(),
@@ -358,16 +358,16 @@ function renderShort(firstId) {
     if (act === 'like') {
       const liked = Likes.toggle(en);
       b.classList.toggle('on', liked);
-      toast(liked ? '高く評価しました（この端末に保存）' : '取り消しました');
+      toast(liked ? T('高く評価しました（この端末に保存）') : T('取り消しました'));
     } else if (act === 'comments') {
       location.hash = '#/watch?v=' + en.v;
     } else if (act === 'share') {
       const url = location.origin + location.pathname + '#/shorts/' + en.v;
-      try { await navigator.clipboard.writeText(url); toast('リンクをコピーしました'); } catch (_) { toast(url, 6000); }
+      try { await navigator.clipboard.writeText(url); toast(T('リンクをコピーしました')); } catch (_) { toast(url, 6000); }
     } else if (act === 'save') {
       const saved = Saves.toggle(en);
       b.classList.toggle('on', saved);
-      toast(saved ? '保存しました（この端末に保存）' : '取り消しました');
+      toast(saved ? T('保存しました（この端末に保存）') : T('取り消しました'));
     } else if (act === 'open') {
       location.hash = '#/watch?v=' + en.v;
     }
@@ -376,9 +376,9 @@ function renderShort(firstId) {
     const ch = watchData?.channel;
     if (!ch?.id) return;
     const subbed = Subs.toggle({ id: ch.id, name: ch.name, avatar: ch.avatar });
-    this.textContent = subbed ? '登録済み' : '登録';
+    this.textContent = subbed ? T('登録済み') : T('登録');
     this.classList.toggle('subbed', subbed);
-    toast(subbed ? 'チャンネル登録しました（この端末に保存）' : '登録を解除しました');
+    toast(subbed ? T('チャンネル登録しました（この端末に保存）') : T('登録を解除しました'));
   });
   // ローカル保存状態の初期反映
   $('#shp-rail [data-sh="like"]').classList.toggle('on', false);

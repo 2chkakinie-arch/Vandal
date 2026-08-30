@@ -32,20 +32,20 @@ function setActiveNav(key) {
 
 /* ==================================================================== HOME */
 const CHIPS = [
-  ['すべて', 'all'], ['音楽', 'music'], ['ゲーム', 'gaming'], ['ニュース', 'news'],
-  ['アニメ', 'anime'], ['料理', 'cooking'], ['スポーツ', 'sports'], ['テクノロジー', 'tech'], ['ASMR', 'asmr'],
+  [T('すべて'), 'all'], [T('音楽'), 'music'], [T('ゲーム'), 'gaming'], [T('ニュース'), 'news'],
+  [T('アニメ'), 'anime'], [T('料理'), 'cooking'], [T('スポーツ'), 'sports'], [T('テクノロジー'), 'tech'], ['ASMR', 'asmr'],
 ];
 
 function drawHomeItems(body, items, { personal = false } = {}) {
   const vids = [], shorts = [];
   for (const it of items || []) (it.kind === 'short' ? shorts : vids).push(it);
   if (!vids.length) {
-    body.innerHTML = nudgeHtml('まずは検索してみましょう', '視聴した動画がここに表示されます。');
+    body.innerHTML = nudgeHtml(T('まずは検索してみましょう'), T('視聴した動画がここに表示されます。'));
     return;
   }
   const first = vids.slice(0, 8), rest = vids.slice(8);
   body.innerHTML =
-    (personal ? `<div class="sec-title">あなたにおすすめ</div>` : '') +
+    (personal ? `<div class="sec-title">${T('あなたにおすすめ')}</div>` : '') +
     `<div class="grid">${first.map(v => videoCard(v)).join('')}</div>` +
     (shorts.length ? shortsShelf(shorts) : '') +
     `<div class="grid">${rest.map(v => videoCard(v)).join('')}</div>`;
@@ -59,8 +59,8 @@ function renderHome(chip = sessionStorage.getItem('chip') || 'all') {
   // YouTube-faithful empty home: no chips, just the search nudge
   if (!profile && chip === 'all') {
     app.innerHTML = nudgeHtml(
-      'まずは検索してみましょう',
-      '視聴履歴がまだありません。上の検索バーから動画を検索すると、あなたの好みに合わせたおすすめがここに表示されます。'
+      T('まずは検索してみましょう'),
+      T('視聴履歴がまだありません。上の検索バーから動画を検索すると、あなたの好みに合わせたおすすめがここに表示されます。')
     );
     return;
   }
@@ -114,6 +114,6 @@ function renderHome(chip = sessionStorage.getItem('chip') || 'all') {
           drawHomeItems(b, []);
         }
       })
-      .catch(() => { if (!snapDrawn && document.body.contains(b)) errBox('ホームを読み込めませんでした', () => renderHome(chip)); });
+      .catch(() => { if (!snapDrawn && document.body.contains(b)) errBox(T('ホームを読み込めませんでした'), () => renderHome(chip)); });
   }
 }
