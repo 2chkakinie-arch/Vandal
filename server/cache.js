@@ -27,6 +27,17 @@ class TTLCache {
     const e = this.map.get(key);
     return e ? e.value : undefined;
   }
+  /**
+   * 高速化（SWR）: 期限切れエントリを "経過時間(ms)" 付きで返す。
+   * 期限切れから grace 以内なら「裏で更新しつつ即返し」に使う（getStale は exp を
+   * 見ないため、grace 判定には本メソッドを使う）。fresh / missing は null。
+   */
+  getExpired(key) {
+    const e = this.map.get(key);
+    if (!e) return null;
+    if (!this._expired(e)) return null; // まだ鮮度があれば SWR の対象外
+    return { value: e.value, age: Date.now() - e.exp };
+  }
   set(key, value, ttl) {
     const exp = ttl === 0 ? 0 : Date.now() + (ttl === undefined ? this.ttl : ttl);
     if (this.map.has(key)) this.map.delete(key);

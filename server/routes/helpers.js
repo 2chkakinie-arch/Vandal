@@ -21,6 +21,40 @@ async function warmDefault(v) {
   } catch (_) { /* warm is best-effort */ }
 }
 /**
+ * 高速化（超高速化）: ホーム／検索などの一覧トップ動画を先読みして、
+ * 「クリックした瞬間」の再生開始をメモリから即時にする。
+ *  - getStreamUrl はストリームマップがキャッシュ済（TTL 5h）なら player() 発行を
+ *    一切せず即返すため、既知の動画には実コストゼロ。
+ *  - 未知の動画だけが player() を 1 本発行し、冒頭チャンクを RAM に保温する。
+ *  - 並行上限 + 同一動画の重複排除でプロキシ帯域を守る（fire-and-forget）。
+ */
+const _warmFeedSeen = new Set();
+const WARM_FEED_LIMIT = 6;        // リスト先頭から先読みする本数
+async function warmFeed(ids) {
+  if (!Array.isArray(ids) || !ids.length) return;
+  const targets = [];
+  for (const id of ids) {
+    if (!/^[A-Za-z0-9_-]{11}$/.test(id)) continue;
+    if (_warmFeedSeen.has(id)) continue;
+    _warmFeedSeen.add(id);
+    targets.push(id);
+    if (targets.length >= WARM_FEED_LIMIT) break;
+  }
+  // プロセス再起動をまたいでセットが膨らまないよう上限を抑える
+  if (_warmFeedSeen.size > 400) _warmFeedSeen.clear();
+  if (!targets.length) return;
+  // 並行数は targets 上限(WARM_FEED_LIMIT)で抑制済。fire-and-forget だが
+  // 待っておくことで呼び出し側の /api/home 応答が早回りしないよう軽く同期。
+  await Promise.all(targets.map((v) => {
+    return (async () => {
+      try {
+        const { url, proxyUrl } = await it.getStreamUrl(v, 18, { verify: false });
+        if (url && !gocore.available()) hotChunks.warm(v, 18, url, proxyUrl);
+      } catch (_) { /* best-effort */ }
+    })();
+  }));
+}
+/**
  * 高速化: /api/watch 応答後にコメントを先行取得（prefetch）。
  * ユーザーがコメント欄をスクロールで開く頃には 5 分キャッシュへ載っていて、
  * /api/comments は一瞬で返る。設定 (commentsPrefetch) で ON/OFF 可能。
@@ -143,4 +177,4 @@ async function pipeUpstream(url, headers, req, res, { dispatcher, headersTimeout
   res.end();
 }
 
-module.exports = { warmDefault, warmComments, wrap, fetchStreamBytes, isGoogleVideo, pipeUpstream, _streamJobs, hlsPins, PIPED_HOSTS, relayState };
+module.exports = { warmDefault, warmComments, warmFeed, wrap, fetchStreamBytes, isGoogleVideo, pipeUpstream, _streamJobs, hlsPins, PIPED_HOSTS, relayState };

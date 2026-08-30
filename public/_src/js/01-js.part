@@ -259,6 +259,51 @@ document.addEventListener('touchstart', (e) => { // モバイルはホバーが�
   fetch('/api/warm/' + vid).catch(() => {});
 }, { passive: true });
 
+// ---- in-viewport prefetch (the key to super-fast video loading) ------------------
+// hover/touch prefetch fires on *intent*, but we also prefetch the moment a card
+// scrolls into view (even earlier than a click). /api/warm is cheap when the stream
+// map is cached (zero player() issuance) and only buffers the opening chunk for
+// unknown videos — so "click a video you've merely scrolled past → first frame plays
+// straight from RAM" becomes the norm. Concurrency is capped and deduplicated.
+const _warmSeen = new Set();      // vids we've already scheduled this session
+const _warmTs = new Map();        // vid -> last scheduled ts (dedupe window)
+let _warmInFlight = 0;
+const WARM_MAX_INFLIGHT = 3;
+const WARM_DEDUP_MS = 30 * 60 * 1000;
+const _warmIO = ('IntersectionObserver' in window)
+  ? new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const card = e.target;
+      _warmIO.unobserve(card);
+      const vid = card.dataset.vid || '';
+      if (!/^[\\w-]{11}$/.test(vid)) continue;
+      _warmSeen.add(vid);
+      if (Date.now() - (_warmTs.get(vid) || 0) < WARM_DEDUP_MS) continue;
+      _warmTs.set(vid, Date.now());
+      if (_warmInFlight >= WARM_MAX_INFLIGHT) continue; // over cap: retry on next intersection
+      _warmInFlight++;
+      fetch('/api/warm/' + vid).catch(() => {}).finally(() => { _warmInFlight--; });
+    }
+  }, { rootMargin: '800px 0px' })
+  : null;
+// observe cards as they are rendered (follows infinite scroll too)
+if (_warmIO) {
+  const _app = document.getElementById('app') || document.body;
+  const _warmMO = new MutationObserver((muts) => {
+    for (const m of muts) {
+      for (const node of m.addedNodes) {
+        if (node.nodeType !== 1) continue;
+        const cards = (node.matches && node.matches('[data-vid]')) ? [node]
+          : (node.querySelectorAll ? node.querySelectorAll('[data-vid]') : []);
+        for (const c of cards) _warmIO.observe(c);
+      }
+    }
+  });
+  _warmMO.observe(_app, { childList: true, subtree: true });
+  _app.querySelectorAll('[data-vid]').forEach((c) => _warmIO.observe(c)); // pick up initial cards
+}
+
 /* skeleton screens */
 function skGrid(n = 12, rail = false) {
   let s = '';
